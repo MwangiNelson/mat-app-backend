@@ -1,0 +1,4 @@
+/.env
+/supabase_functions.sql
+/supabase_schema.sql
+/venv
