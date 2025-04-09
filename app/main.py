@@ -8,6 +8,7 @@ from app.api import auth, vehicles, drivers, operations, locations, routes, trip
 from app.schemas.user import ErrorResponse
 from app.core.utils import DateTimeEncoder
 import json
+import os
 from datetime import datetime
 
 class CustomJSONResponse(JSONResponse):
@@ -158,4 +159,8 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True) 
+    # Get port from environment variable or default to 8000
+    port = int(os.environ.get("PORT", 8000))
+    # Get host from environment or default to 0.0.0.0
+    host = os.environ.get("HOST", "0.0.0.0")
+    uvicorn.run("app.main:app", host=host, port=port, reload=True) 

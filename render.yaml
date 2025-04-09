@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: matatu-management-api
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python render.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.7
+      - key: PORT
+        value: 10000
+      - key: HOST
+        value: 0.0.0.0
+      - key: SECRET_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
