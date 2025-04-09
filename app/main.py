@@ -163,4 +163,4 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     # Get host from environment or default to 0.0.0.0
     host = os.environ.get("HOST", "0.0.0.0")
-    uvicorn.run("app.main:app", host=host, port=port, reload=True) 
+    uvicorn.run("app.main:app", host="0.0.0.0", port="4000", reload=True) 
