@@ -10,14 +10,14 @@ import json
 
 router = APIRouter()
 
-@router.post("/", response_model=TripResponse)
+@router.post("/", response_model=TripDetail)
 async def create_trip(trip_data: TripCreate, current_user = Depends(get_current_active_user)) -> Any:
     """
     Create a new trip.
     """
     try:
         # Check if vehicle exists
-        vehicle_response = supabase.table("vehicles").select("passenger_capacity").eq("id", trip_data.vehicle_id).execute()
+        vehicle_response = supabase.table("vehicles").select("passenger_capacity, reg_no").eq("id", trip_data.vehicle_id).execute()
         
         if not vehicle_response.data:
             raise HTTPException(
@@ -26,7 +26,7 @@ async def create_trip(trip_data: TripCreate, current_user = Depends(get_current_
             )
         
         # Check if driver exists
-        driver_response = supabase.table("drivers").select("*").eq("id", trip_data.driver_id).execute()
+        driver_response = supabase.table("drivers").select("name").eq("id", trip_data.driver_id).execute()
         
         if not driver_response.data:
             raise HTTPException(
@@ -60,7 +60,26 @@ async def create_trip(trip_data: TripCreate, current_user = Depends(get_current_
                 detail="Failed to create trip"
             )
         
-        return response.data[0]
+        # Enrich response with driver and vehicle information
+        trip_data = response.data[0]
+        
+        enriched_trip = {
+            **trip_data,
+            "driver_name": driver_response.data[0]["name"],
+            "vehicle_registration": vehicle_response.data[0]["reg_no"],
+            "route_name": route_response.data[0].get("name"),
+            "origin": route_response.data[0].get("origin"),
+            "destination": route_response.data[0].get("destination"),
+            "fare_amount": route_fare
+        }
+        
+        # Split collection_time into date and time fields
+        if "collection_time" in trip_data and trip_data["collection_time"]:
+            dt_obj = datetime.fromisoformat(trip_data["collection_time"].replace('Z', '+00:00'))
+            enriched_trip["collection_date"] = dt_obj.strftime("%Y-%m-%d")
+            enriched_trip["collection_time_only"] = dt_obj.strftime("%H:%M:%S")
+        
+        return enriched_trip
     except HTTPException:
         raise
     except Exception as e:
@@ -69,7 +88,7 @@ async def create_trip(trip_data: TripCreate, current_user = Depends(get_current_
             detail=f"Error creating trip: {str(e)}"
         )
 
-@router.get("/", response_model=List[TripResponse])
+@router.get("/", response_model=List[TripDetail])
 async def get_trips(
     vehicle_id: Optional[str] = None,
     driver_id: Optional[str] = None,
@@ -97,13 +116,41 @@ async def get_trips(
             query = query.eq("status", status)
         
         if date:
-            query = query.gte("start_time", date.isoformat())
+            query = query.gte("collection_time", date.isoformat())
             next_day = date.replace(day=date.day + 1)
-            query = query.lt("start_time", next_day.isoformat())
+            query = query.lt("collection_time", next_day.isoformat())
         
-        response = query.order("start_time", desc=True).execute()
+        response = query.order("collection_time", desc=True).execute()
         
-        return response.data
+        # Enrich trip data with driver and vehicle information
+        enriched_trips = []
+        for trip in response.data:
+            # Get driver info
+            driver = supabase.table("drivers").select("name").eq("id", trip["driver_id"]).execute()
+            
+            # Get vehicle info
+            vehicle = supabase.table("vehicles").select("reg_no").eq("id", trip["vehicle_id"]).execute()
+            
+            # Create enriched trip object
+            enriched_trip = {
+                **trip,
+                "driver_name": driver.data[0]["name"] if driver.data else None,
+                "vehicle_registration": vehicle.data[0]["reg_no"] if vehicle.data else None,
+                "route_name": None,  # These fields are in TripDetail but we're not populating them here
+                "origin": None,
+                "destination": None,
+                "fare_amount": None
+            }
+            
+            # Split collection_time into date and time fields
+            if "collection_time" in trip and trip["collection_time"]:
+                dt_obj = datetime.fromisoformat(trip["collection_time"].replace('Z', '+00:00'))
+                enriched_trip["collection_date"] = dt_obj.strftime("%Y-%m-%d") 
+                enriched_trip["collection_time_only"] = dt_obj.strftime("%H:%M:%S")
+            
+            enriched_trips.append(enriched_trip)
+        
+        return enriched_trips
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -125,7 +172,15 @@ async def get_trip_detail(trip_id: str, current_user = Depends(get_current_activ
                 detail="Trip not found"
             )
         
-        return response.data[0]
+        trip_data = response.data[0]
+        
+        # Split collection_time into date and time fields
+        if "collection_time" in trip_data and trip_data["collection_time"]:
+            dt_obj = datetime.fromisoformat(trip_data["collection_time"].replace('Z', '+00:00'))
+            trip_data["collection_date"] = dt_obj.strftime("%Y-%m-%d")
+            trip_data["collection_time_only"] = dt_obj.strftime("%H:%M:%S")
+        
+        return trip_data
     except HTTPException:
         raise
     except Exception as e:
@@ -134,7 +189,7 @@ async def get_trip_detail(trip_id: str, current_user = Depends(get_current_activ
             detail=f"Error fetching trip details: {str(e)}"
         )
 
-@router.put("/{trip_id}", response_model=TripResponse)
+@router.put("/{trip_id}", response_model=TripDetail)
 async def update_trip(
     trip_id: str, 
     trip_update: TripUpdate, 
@@ -157,11 +212,28 @@ async def update_trip(
         update_data = {k: v for k, v in trip_update.dict().items() if v is not None}
         
         if not update_data:
-            return check_response.data[0]
-        
-        # If status is being changed to completed, ensure end_time is set
-        if "status" in update_data and update_data["status"] == "completed" and "end_time" not in update_data:
-            update_data["end_time"] = datetime.now().isoformat()
+            # Even if no updates, we need to enrich the response with driver and vehicle info
+            trip_data = check_response.data[0]
+            driver = supabase.table("drivers").select("name").eq("id", trip_data["driver_id"]).execute()
+            vehicle = supabase.table("vehicles").select("reg_no").eq("id", trip_data["vehicle_id"]).execute()
+            
+            enriched_trip = {
+                **trip_data,
+                "driver_name": driver.data[0]["name"] if driver.data else None,
+                "vehicle_registration": vehicle.data[0]["reg_no"] if vehicle.data else None,
+                "route_name": None,
+                "origin": None,
+                "destination": None,
+                "fare_amount": None
+            }
+            
+            # Split collection_time into date and time fields
+            if "collection_time" in trip_data and trip_data["collection_time"]:
+                dt_obj = datetime.fromisoformat(trip_data["collection_time"].replace('Z', '+00:00'))
+                enriched_trip["collection_date"] = dt_obj.strftime("%Y-%m-%d")
+                enriched_trip["collection_time_only"] = dt_obj.strftime("%H:%M:%S")
+            
+            return enriched_trip
         
         # Update trip
         response = supabase.table("trips").update(update_data).eq("id", trip_id).execute()
@@ -175,10 +247,10 @@ async def update_trip(
         # If trip is completed, update daily summary
         if "status" in update_data and update_data["status"] == "completed":
             trip_data = response.data[0]
-            trip_date = datetime.fromisoformat(trip_data["start_time"].replace('Z', '+00:00')).date()
+            trip_date = datetime.fromisoformat(trip_data["collection_time"].replace('Z', '+00:00')).date()
             
             # Calculate total expenses
-            total_expenses = trip_data.get("fuel_cost", 0) + trip_data.get("other_expenses", 0)
+            total_expenses = trip_data.get("fuel_expense", 0) + trip_data.get("repair_expense", 0)
             net_profit = trip_data.get("collected_amount", 0) - total_expenses
             
             # Check if summary exists for this vehicle and date
@@ -189,7 +261,6 @@ async def update_trip(
                 summary = summary_check.data[0]
                 summary_update = {
                     "trip_count": summary["trip_count"] + 1,
-                    "total_passengers": summary["total_passengers"] + trip_data["passenger_count"],
                     "total_expected_amount": summary["total_expected_amount"] + trip_data["expected_amount"],
                     "total_collected_amount": summary["total_collected_amount"] + (trip_data.get("collected_amount", 0) or 0),
                     "total_expenses": summary["total_expenses"] + total_expenses,
@@ -204,7 +275,6 @@ async def update_trip(
                     "driver_id": trip_data["driver_id"],
                     "date": trip_date.isoformat(),
                     "trip_count": 1,
-                    "total_passengers": trip_data["passenger_count"],
                     "total_expected_amount": trip_data["expected_amount"],
                     "total_collected_amount": trip_data.get("collected_amount", 0) or 0,
                     "total_expenses": total_expenses,
@@ -213,7 +283,28 @@ async def update_trip(
                 
                 supabase.table("daily_summaries").insert(summary_data).execute()
         
-        return response.data[0]
+        # Enrich response with driver and vehicle information
+        trip_data = response.data[0]
+        driver = supabase.table("drivers").select("name").eq("id", trip_data["driver_id"]).execute()
+        vehicle = supabase.table("vehicles").select("reg_no").eq("id", trip_data["vehicle_id"]).execute()
+        
+        enriched_trip = {
+            **trip_data,
+            "driver_name": driver.data[0]["name"] if driver.data else None,
+            "vehicle_registration": vehicle.data[0]["reg_no"] if vehicle.data else None,
+            "route_name": None,
+            "origin": None,
+            "destination": None,
+            "fare_amount": None
+        }
+        
+        # Split collection_time into date and time fields
+        if "collection_time" in trip_data and trip_data["collection_time"]:
+            dt_obj = datetime.fromisoformat(trip_data["collection_time"].replace('Z', '+00:00'))
+            enriched_trip["collection_date"] = dt_obj.strftime("%Y-%m-%d")
+            enriched_trip["collection_time_only"] = dt_obj.strftime("%H:%M:%S")
+        
+        return enriched_trip
     except HTTPException:
         raise
     except Exception as e:

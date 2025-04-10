@@ -43,6 +43,8 @@ class TripBase(BaseModel):
     end_time: Optional[datetime] = None
     route: Optional[List[RoutePoint]] = []
     status: TripStatus = TripStatus.ACTIVE
+    route_id: Optional[str] = None
+    expected_amount: Optional[float] = None
 
 class TripCreate(BaseModel):
     driver_id: str
@@ -63,6 +65,7 @@ class TripInDB(TripBase):
 class TripResponse(TripBase):
     id: str
     created_at: datetime
+    updated_at: datetime
     driver_name: Optional[str] = None
     vehicle_reg_no: Optional[str] = None
 

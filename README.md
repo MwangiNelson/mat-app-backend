@@ -66,14 +66,14 @@ A FastAPI backend with Supabase integration for the Matatu Management System.
    uvicorn app.main:app --reload
    ```
 
-The API will be available at `http://localhost:8000`.
+The API will be available at `http://localhost:4000`.
 
 ## API Documentation
 
 Once the server is running, you can access the interactive API documentation:
 
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
+- Swagger UI: `http://localhost:4000/docs`
+- ReDoc: `http://localhost:4000/redoc`
 
 ## API Endpoints
 
