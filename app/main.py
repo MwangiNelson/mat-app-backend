@@ -1,12 +1,13 @@
-from fastapi import FastAPI, Request, HTTPException, status
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from app.api import auth, vehicles, drivers, operations, locations, routes, trips, reports, dashboard
+from app.api import auth, vehicles, routes, drivers, trips, dashboard, reports
 from app.schemas.user import ErrorResponse
 from app.core.utils import DateTimeEncoder
+from app.core.config import settings
 import json
 import os
 from datetime import datetime
@@ -27,6 +28,9 @@ app = FastAPI(
     description="Backend API for the Matatu Management System",
     version="1.0.0",
     default_response_class=CustomJSONResponse,  # Use our custom response class by default
+    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    docs_url=f"{settings.API_V1_STR}/docs",
+    redoc_url=f"{settings.API_V1_STR}/redoc",
 )
 
 # Custom OpenAPI schema for better API documentation
@@ -120,13 +124,8 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 async def general_exception_handler(request: Request, exc: Exception):
     """Handle all other exceptions"""
     return CustomJSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content=ErrorResponse(
-            status="error",
-            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message="Internal server error",
-            details={"path": request.url.path}
-        ).dict()
+        status_code=500,
+        content={"detail": str(exc)},
     )
 
 # Configure CORS
@@ -144,10 +143,8 @@ app.include_router(vehicles.router, prefix="/api/vehicles", tags=["Vehicles"])
 app.include_router(drivers.router, prefix="/api/drivers", tags=["Drivers"])
 app.include_router(routes.router, prefix="/api/routes", tags=["Routes"])
 app.include_router(trips.router, prefix="/api/trips", tags=["Trips"])
-app.include_router(reports.router, prefix="/api/reports", tags=["Reports"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
-app.include_router(operations.router, prefix="/api/operations", tags=["Operations"])
-app.include_router(locations.router, prefix="/api/locations", tags=["Locations"])
+app.include_router(reports.router, prefix="/api/reports", tags=["Reports"])
 
 @app.get("/")
 async def root():

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import Any, Dict, List, Optional
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, time, timedelta
 
 from app.core.db import supabase
 from app.core.security import get_current_active_user
@@ -1206,8 +1206,12 @@ async def get_performance_summary(
                 detail="End date must be after start date"
             )
         
+        start_datetime = datetime.combine(parsed_start_date, time.min).isoformat()  # 00:00:00
+        end_datetime = datetime.combine(parsed_end_date, time.max).isoformat()  # 23:59:59.999999
+
+        
         # Build the query with date range filter
-        query = supabase.table("trips").select("*").gte("collection_time", parsed_start_date.isoformat()).lte("collection_time", parsed_end_date.isoformat())
+        query = supabase.table("trips").select("*").gte("collection_time", start_datetime).lte("collection_time", end_datetime)
         
         # Add vehicle filter if provided
         if vehicle_ids and len(vehicle_ids) > 0:

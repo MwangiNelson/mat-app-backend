@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from datetime import datetime, date
+from enum import Enum
 
 class TimeSeriesData(BaseModel):
     """Time series data for charts"""
@@ -110,4 +111,15 @@ class PerformanceSummary(BaseModel):
     start_date: date
     end_date: date
     vehicle_ids: Optional[List[str]] = None
-    driver_ids: Optional[List[str]] = None 
+    driver_ids: Optional[List[str]] = None
+
+class ReportFormat(str, Enum):
+    """Format options for generated reports"""
+    PDF = "pdf"
+    HTML = "html"
+
+class ReportResponse(BaseModel):
+    """Response with report file information"""
+    filename: str
+    content_type: str
+    file_content: str  # Base64 encoded file content 
