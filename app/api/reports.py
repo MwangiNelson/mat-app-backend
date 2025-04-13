@@ -43,15 +43,21 @@ def render_template_to_pdf(template_name, context_data):
             detail=f"Error rendering PDF: {str(e)}"
         )
 
-def fetch_trip_data(start_date, end_date, vehicle_id=None, driver_id=None):
-    """Fetch trip data with optional filters"""
+def fetch_trip_data(start_date, end_date, vehicle_ids=None, driver_ids=None):
+    """Fetch trip data with optional filters for multiple vehicles and drivers"""
     query = supabase.table("trips").select("*").gte("collection_time", start_date.isoformat()).lte("collection_time", end_date.isoformat())
     
-    if vehicle_id:
-        query = query.eq("vehicle_id", vehicle_id)
+    if vehicle_ids:
+        if isinstance(vehicle_ids, list):
+            query = query.in_("vehicle_id", vehicle_ids)
+        else:
+            query = query.eq("vehicle_id", vehicle_ids)
         
-    if driver_id:
-        query = query.eq("driver_id", driver_id)
+    if driver_ids:
+        if isinstance(driver_ids, list):
+            query = query.in_("driver_id", driver_ids)
+        else:
+            query = query.eq("driver_id", driver_ids)
     
     response = query.order("collection_time", desc=True).execute()
     return response.data
@@ -509,4 +515,309 @@ async def generate_vehicle_report(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating vehicle report: {str(e)}"
+        )
+
+@router.get("/combined", response_class=StreamingResponse)
+async def generate_combined_report(
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    vehicle_ids: Optional[str] = Query(None, description="Comma-separated list of vehicle IDs"),
+    driver_ids: Optional[str] = Query(None, description="Comma-separated list of driver IDs"),
+    format: ReportFormat = Query(ReportFormat.PDF, description="Report format (pdf or html)"),
+    current_user = Depends(get_current_active_user)
+) -> Any:
+    """
+    Generate a combined performance report for multiple vehicles and/or drivers.
+    
+    Returns a formatted document containing:
+    - Overall summary metrics
+    - Vehicle performance breakdown
+    - Driver performance breakdown
+    - Daily performance breakdown
+    - Complete trip logs
+    """
+    try:
+        # Parse vehicle and driver IDs
+        vehicle_id_list = vehicle_ids.split(",") if vehicle_ids else None
+        driver_id_list = driver_ids.split(",") if driver_ids else None
+        
+        # Parse date strings if provided
+        today = date.today()
+        
+        # Default to last 30 days if no dates provided
+        if not start_date:
+            parsed_start_date = today - timedelta(days=29)
+        else:
+            try:
+                parsed_start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid start_date format. Use YYYY-MM-DD."
+                )
+        
+        if not end_date:
+            parsed_end_date = today
+        else:
+            try:
+                parsed_end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid end_date format. Use YYYY-MM-DD."
+                )
+        
+        # Fetch vehicle and driver details
+        vehicles_data = {}
+        if vehicle_id_list:
+            vehicles_response = supabase.table("vehicles").select("*").in_("id", vehicle_id_list).execute()
+            for vehicle in vehicles_response.data:
+                vehicles_data[vehicle["id"]] = vehicle
+        
+        drivers_data = {}
+        if driver_id_list:
+            drivers_response = supabase.table("drivers").select("*").in_("id", driver_id_list).execute()
+            for driver in drivers_response.data:
+                drivers_data[driver["id"]] = driver
+        
+        # Get and enrich trip data
+        trips = fetch_trip_data(parsed_start_date, parsed_end_date, vehicle_id_list, driver_id_list)
+        enriched_trips = enrich_trip_data(trips)
+        
+        # Process metrics
+        total_collections = 0
+        total_fuel_expense = 0
+        total_repair_expense = 0
+        total_other_expense = 0
+        total_expenses = 0
+        trip_count = len(enriched_trips)
+        active_days = set()
+        vehicle_metrics = {}
+        driver_metrics = {}
+        routes_data = {}
+        
+        # Initialize metrics dictionaries
+        for v_id in vehicles_data:
+            vehicle_metrics[v_id] = {
+                "vehicle_id": v_id,
+                "registration": vehicles_data[v_id]["reg_no"],
+                "total_collections": 0,
+                "fuel_expense": 0,
+                "repair_expense": 0,
+                "other_expense": 0,
+                "total_expenses": 0,
+                "trip_count": 0,
+                "active_days": set(),
+                "drivers": {}
+            }
+        
+        for d_id in drivers_data:
+            driver_metrics[d_id] = {
+                "driver_id": d_id,
+                "name": drivers_data[d_id]["name"],
+                "total_collections": 0,
+                "total_expected": 0,
+                "trip_count": 0,
+                "vehicles": {},
+                "routes": {}
+            }
+        
+        # Process trip data
+        for trip in enriched_trips:
+            # Extract basic metrics
+            collected_amount = float(trip.get("collected_amount", 0) or 0)
+            expected_amount = float(trip.get("expected_amount", 0) or 0)
+            fuel_exp = float(trip.get("fuel_expense", 0) or 0)
+            repair_exp = float(trip.get("repair_expense", 0) or 0)
+            other_exp = float(trip.get("other_expense", 0) or 0)
+            total_trip_expense = fuel_exp + repair_exp + other_exp
+            
+            # Update overall totals
+            total_collections += collected_amount
+            total_fuel_expense += fuel_exp
+            total_repair_expense += repair_exp
+            total_other_expense += other_exp
+            total_expenses += total_trip_expense
+            
+            # Track active days
+            if trip.get("collection_date"):
+                active_days.add(trip["collection_date"])
+            
+            # Update vehicle metrics
+            v_id = trip.get("vehicle_id")
+            if v_id and v_id in vehicle_metrics:
+                vm = vehicle_metrics[v_id]
+                vm["total_collections"] += collected_amount
+                vm["fuel_expense"] += fuel_exp
+                vm["repair_expense"] += repair_exp
+                vm["other_expense"] += other_exp
+                vm["total_expenses"] += total_trip_expense
+                vm["trip_count"] += 1
+                if trip.get("collection_date"):
+                    vm["active_days"].add(trip["collection_date"])
+                
+                # Track drivers for this vehicle
+                d_id = trip.get("driver_id")
+                if d_id:
+                    if d_id not in vm["drivers"]:
+                        vm["drivers"][d_id] = {
+                            "name": trip.get("driver_name", "Unknown"),
+                            "trip_count": 0,
+                            "total_collections": 0
+                        }
+                    vm["drivers"][d_id]["trip_count"] += 1
+                    vm["drivers"][d_id]["total_collections"] += collected_amount
+            
+            # Update driver metrics
+            d_id = trip.get("driver_id")
+            if d_id and d_id in driver_metrics:
+                dm = driver_metrics[d_id]
+                dm["total_collections"] += collected_amount
+                dm["total_expected"] += expected_amount
+                dm["trip_count"] += 1
+                
+                # Track vehicles for this driver
+                if v_id:
+                    if v_id not in dm["vehicles"]:
+                        dm["vehicles"][v_id] = {
+                            "registration": trip.get("vehicle_registration", "Unknown"),
+                            "trip_count": 0,
+                            "total_collections": 0
+                        }
+                    dm["vehicles"][v_id]["trip_count"] += 1
+                    dm["vehicles"][v_id]["total_collections"] += collected_amount
+                
+                # Track routes
+                route_id = trip.get("route_id")
+                route_name = trip.get("route_name")
+                if route_id and route_name:
+                    if route_id not in dm["routes"]:
+                        dm["routes"][route_id] = {
+                            "name": route_name,
+                            "trip_count": 0,
+                            "total_collections": 0,
+                            "total_expected": 0
+                        }
+                    dm["routes"][route_id]["trip_count"] += 1
+                    dm["routes"][route_id]["total_collections"] += collected_amount
+                    dm["routes"][route_id]["total_expected"] += expected_amount
+        
+        # Calculate derived metrics
+        date_range_days = (parsed_end_date - parsed_start_date).days + 1
+        overall_utilization = (len(active_days) / date_range_days * 100) if date_range_days > 0 else 0
+        
+        # Process vehicle metrics
+        vehicles_list = []
+        for v_id, vm in vehicle_metrics.items():
+            # Calculate utilization rate
+            v_utilization = (len(vm["active_days"]) / date_range_days * 100) if date_range_days > 0 else 0
+            
+            # Convert drivers dict to list
+            drivers_list = [{"driver_id": k, **v} for k, v in vm["drivers"].items()]
+            drivers_list.sort(key=lambda x: x["trip_count"], reverse=True)
+            
+            # Create final vehicle metrics
+            vehicle_data = {
+                **vm,
+                "utilization_rate": v_utilization,
+                "drivers": drivers_list,
+                "active_days": len(vm["active_days"])
+            }
+            del vehicle_data["active_days"]  # Remove the set
+            vehicles_list.append(vehicle_data)
+        
+        # Sort vehicles by total collections
+        vehicles_list.sort(key=lambda x: x["total_collections"], reverse=True)
+        
+        # Process driver metrics
+        drivers_list = []
+        for d_id, dm in driver_metrics.items():
+            # Calculate efficiency
+            efficiency = (dm["total_collections"] / dm["total_expected"] * 100) if dm["total_expected"] > 0 else 0
+            
+            # Convert vehicles dict to list
+            vehicles_list_for_driver = [{"vehicle_id": k, **v} for k, v in dm["vehicles"].items()]
+            vehicles_list_for_driver.sort(key=lambda x: x["trip_count"], reverse=True)
+            
+            # Convert routes dict to list and calculate efficiency
+            routes_list = []
+            for r_id, r_data in dm["routes"].items():
+                route_efficiency = (r_data["total_collections"] / r_data["total_expected"] * 100) if r_data["total_expected"] > 0 else 0
+                routes_list.append({
+                    "route_id": r_id,
+                    **r_data,
+                    "efficiency": route_efficiency
+                })
+            routes_list.sort(key=lambda x: x["trip_count"], reverse=True)
+            
+            # Create final driver metrics
+            driver_data = {
+                **dm,
+                "collection_efficiency": efficiency,
+                "avg_per_trip": dm["total_collections"] / dm["trip_count"] if dm["trip_count"] > 0 else 0,
+                "vehicles": vehicles_list_for_driver,
+                "routes": routes_list
+            }
+            del driver_data["total_expected"]
+            drivers_list.append(driver_data)
+        
+        # Sort drivers by total collections
+        drivers_list.sort(key=lambda x: x["total_collections"], reverse=True)
+        
+        # Process daily performance
+        daily_data = process_daily_performance(enriched_trips)
+        
+        # Prepare the report context
+        context = {
+            "summary": {
+                "total_collections": total_collections,
+                "total_expenses": total_expenses,
+                "fuel_expense": total_fuel_expense,
+                "repair_expense": total_repair_expense,
+                "other_expense": total_other_expense,
+                "net_profit": total_collections - total_expenses,
+                "trip_count": trip_count,
+                "utilization_rate": overall_utilization,
+                "active_days": len(active_days),
+                "total_days": date_range_days
+            },
+            "vehicles": vehicles_list,
+            "drivers": drivers_list,
+            "daily_data": daily_data,
+            "trips": enriched_trips,
+            "start_date": parsed_start_date.strftime("%Y-%m-%d"),
+            "end_date": parsed_end_date.strftime("%Y-%m-%d"),
+            "report_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        
+        # Generate the report in the specified format
+        if format == ReportFormat.HTML:
+            # Render the HTML template directly
+            template = template_env.get_template("combined_report.html")
+            html_content = template.render(**context)
+            
+            # Return HTML response
+            filename = f"combined_report_{parsed_start_date.strftime('%Y%m%d')}.html"
+            
+            return StreamingResponse(
+                io.StringIO(html_content),
+                media_type="text/html",
+                headers={"Content-Disposition": f"attachment; filename={filename}"}
+            )
+        else:
+            # Render PDF
+            pdf_content = render_template_to_pdf("combined_report.html", context)
+            filename = f"combined_report_{parsed_start_date.strftime('%Y%m%d')}.pdf"
+            
+            return StreamingResponse(
+                pdf_content,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f"attachment; filename={filename}"}
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating combined report: {str(e)}"
         ) 
