@@ -30,20 +30,13 @@ async def get_financial_overview(current_user = Depends(get_current_active_user)
         week_ago = today - timedelta(days=7)
         
         # 1. Calculate Total Revenue Today
-        # Sum collected_amount from trips that started or ended today
+        # Sum collected_amount from trips with collection_time today
         today_trips = supabase.table("trips").select("collected_amount").gte("collection_time", f"{today_str}T00:00:00").lt("collection_time", f"{today_str}T23:59:59").execute()
         
-        # Add trips that ended today but might have started earlier
-        ended_today_trips = supabase.table("trips").select("collected_amount").gte("end_time", f"{today_str}T00:00:00").lt("end_time", f"{today_str}T23:59:59").execute()
-        
-        # Combine and sum the results
+        # Calculate total revenue from today's trips
         total_revenue_today = 0
         for trip in today_trips.data:
             total_revenue_today += float(trip.get("collected_amount", 0) or 0)
-            
-        for trip in ended_today_trips.data:
-            if trip not in today_trips.data:  # Avoid double counting
-                total_revenue_today += float(trip.get("collected_amount", 0) or 0)
         
         # 2. Count Active Vehicles
         active_vehicles_response = supabase.table("vehicles").select("id").eq("status", "active").execute()
@@ -82,16 +75,11 @@ async def get_financial_overview(current_user = Depends(get_current_active_user)
         
         # 5. Revenue comparison between today and yesterday
         yesterday_trips = supabase.table("trips").select("collected_amount").gte("collection_time", f"{yesterday_str}T00:00:00").lt("collection_time", f"{yesterday_str}T23:59:59").execute()
-        ended_yesterday_trips = supabase.table("trips").select("collected_amount").gte("end_time", f"{yesterday_str}T00:00:00").lt("end_time", f"{yesterday_str}T23:59:59").execute()
         
         # Calculate yesterday's revenue
         total_revenue_yesterday = 0
         for trip in yesterday_trips.data:
             total_revenue_yesterday += float(trip.get("collected_amount", 0) or 0)
-            
-        for trip in ended_yesterday_trips.data:
-            if trip not in yesterday_trips.data:  # Avoid double counting
-                total_revenue_yesterday += float(trip.get("collected_amount", 0) or 0)
         
         # Calculate percentage change
         if total_revenue_yesterday > 0:
@@ -100,8 +88,8 @@ async def get_financial_overview(current_user = Depends(get_current_active_user)
             revenue_comparison = 100 if total_revenue_today > 0 else 0
         
         # 6. Calculate vehicle utilization
-        # Get all trips that were active today
-        all_active_trips_today = supabase.table("trips").select("vehicle_id").or_(f"collection_time.gte.{today_str}T00:00:00,end_time.gte.{today_str}T00:00:00").execute()
+        # Get all trips that were active today by looking at collection_time and status
+        all_active_trips_today = supabase.table("trips").select("vehicle_id").gte("collection_time", f"{today_str}T00:00:00").lt("collection_time", f"{today_str}T23:59:59").execute()
         
         # Count unique vehicles that had trips today
         active_vehicles_today = set()

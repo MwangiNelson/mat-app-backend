@@ -14,6 +14,15 @@ def parse_date_string(date_str: str) -> date:
         if isinstance(date_str, date):
             return date_str
             
+        # Try to handle ISO 8601 format with time component (e.g., 2025-04-22T21:00:00.000Z)
+        if 'T' in date_str:
+            # Extract just the date part (before the T)
+            date_part = date_str.split('T')[0]
+            parts = date_part.split('-')
+            if len(parts) == 3:
+                year, month, day = map(int, parts)
+                return date(year, month, day)
+            
         # Check if it's in ISO format (YYYY-MM-DD)
         parts = date_str.split('-')
         if len(parts) == 3:
@@ -36,6 +45,8 @@ class VehicleBase(BaseModel):
     status: VehicleStatus = VehicleStatus.ACTIVE
     insurance_expiry: Union[str, date]
     tlb_expiry: Union[str, date]
+    speed_governor_expiry: Union[str, date]
+    inspection_expiry: Union[str, date]
     passenger_capacity: int = 0
 
     
@@ -43,7 +54,7 @@ class VehicleBase(BaseModel):
         populate_by_name = True
         # Remove ISO format encoder to avoid conflict
         
-    @validator('insurance_expiry', 'tlb_expiry', pre=True)
+    @validator('insurance_expiry', 'tlb_expiry', 'speed_governor_expiry', 'inspection_expiry', pre=True)
     def validate_dates(cls, value):
         """Parse dates from strings, supporting both DB and user formats"""
         if isinstance(value, str):
@@ -62,10 +73,12 @@ class VehicleUpdate(BaseModel):
     status: Optional[VehicleStatus] = None
     insurance_expiry: Optional[Union[str, date]] = None
     tlb_expiry: Optional[Union[str, date]] = None
+    speed_governor_expiry: Optional[Union[str, date]] = None
+    inspection_expiry: Optional[Union[str, date]] = None
     passenger_capacity: Optional[int] = None
     route_id: Optional[str] = None
     
-    @validator('insurance_expiry', 'tlb_expiry', pre=True)
+    @validator('insurance_expiry', 'tlb_expiry', 'speed_governor_expiry', 'inspection_expiry', pre=True)
     def validate_dates(cls, value):
         """Parse dates from strings, supporting both DB and user formats"""
         if value is not None and isinstance(value, str):
@@ -94,7 +107,7 @@ class VehicleResponse(VehicleBase):
             date: lambda v: v.strftime('%d-%m-%Y')
         }
         
-    @validator('insurance_expiry', 'tlb_expiry')
+    @validator('insurance_expiry', 'tlb_expiry', 'speed_governor_expiry', 'inspection_expiry')
     def format_dates(cls, value):
         """Ensure dates are properly formatted for client consumption"""
         if isinstance(value, date):

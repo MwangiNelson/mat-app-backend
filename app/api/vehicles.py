@@ -46,7 +46,7 @@ def convert_iso_dates_to_client_format(vehicle: Dict) -> Dict:
         vehicle["passenger_capacity"] = 0
         
     # Convert ISO format dates to the expected DD-MM-YYYY format for response
-    for date_field in ["insurance_expiry", "tlb_expiry"]:
+    for date_field in ["insurance_expiry", "tlb_expiry", "speed_governor_expiry", "inspection_expiry"]:
         if date_field in vehicle and vehicle[date_field]:
             parts = vehicle[date_field].split("-")
             if len(parts) == 3 and len(parts[0]) == 4:  # YYYY-MM-DD format
@@ -139,7 +139,7 @@ async def create_vehicle(
         vehicle_dict = vehicle_in.dict(by_alias=True)
         
         # Convert date objects to ISO strings for Supabase
-        for date_field in ['insurance_expiry', 'tlb_expiry']:
+        for date_field in ['insurance_expiry', 'tlb_expiry', 'speed_governor_expiry', 'inspection_expiry']:
             if date_field in vehicle_dict and isinstance(vehicle_dict[date_field], date):
                 vehicle_dict[date_field] = vehicle_dict[date_field].isoformat()
         
@@ -237,7 +237,7 @@ async def update_vehicle(
             if key == "registration":
                 update_data["reg_no"] = value
             # Convert date objects to ISO format strings
-            elif key in ['insurance_expiry', 'tlb_expiry'] and isinstance(value, date):
+            elif key in ['insurance_expiry', 'tlb_expiry', 'speed_governor_expiry', 'inspection_expiry'] and isinstance(value, date):
                 update_data[key] = value.isoformat()
             else:
                 update_data[key] = value
