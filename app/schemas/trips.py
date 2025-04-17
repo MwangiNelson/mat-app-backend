@@ -15,7 +15,6 @@ class TripBase(BaseModel):
     route: Optional[str] = None
     notes: Optional[str] = None
     collected_amount: Optional[int] = 0
-    fuel_expense: Optional[float] = 0
     repair_expense: Optional[float] = 0
     created_by: str
     updated_at: Optional[datetime] = None
@@ -29,7 +28,6 @@ class TripCreate(BaseModel):
     notes: Optional[str] = None
     created_by: str
     collected_amount: Optional[int] = 0
-    fuel_expense: Optional[float] = 0
     repair_expense: Optional[float] = 0
     status: TripStatus = TripStatus.COMPLETED
 
@@ -37,7 +35,6 @@ class TripUpdate(BaseModel):
     notes: Optional[str] = None
     status: Optional[TripStatus] = None
     collected_amount: Optional[int] = None
-    fuel_expense: Optional[float] = None
     repair_expense: Optional[float] = None
     expected_amount: Optional[float] = None
     updated_at: Optional[datetime] = None

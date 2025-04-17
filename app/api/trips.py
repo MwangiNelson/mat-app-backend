@@ -270,7 +270,7 @@ async def update_trip(
             trip_date = datetime.fromisoformat(trip_data["collection_time"].replace('Z', '+00:00')).date()
             
             # Calculate total expenses
-            total_expenses = trip_data.get("fuel_expense", 0) + trip_data.get("repair_expense", 0)
+            total_expenses =  trip_data.get("repair_expense", 0)
             net_profit = trip_data.get("collected_amount", 0) - total_expenses
             
             # Check if summary exists for this vehicle and date
