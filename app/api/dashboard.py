@@ -170,7 +170,7 @@ async def get_financial_overview(current_user = Depends(get_current_active_user)
             "total_revenue_today": total_revenue_today,
             "active_vehicles_count": active_vehicles_count,
             "total_vehicles_count": total_vehicles_count,
-            "upcoming_renewals": upcoming_renewals,
+            "upcoming_renewals": len(renewals),
             "renewals": renewals,
             "avg_collection_per_vehicle": avg_collection_per_vehicle,
             "revenue_comparison": revenue_comparison,
