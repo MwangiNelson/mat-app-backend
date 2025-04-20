@@ -136,12 +136,12 @@
             <th>Total Trips</th>
         </tr>
         <tr>
-            <td>KES {{ "%.2f"|format(summary.total_collections) }}</td>
-            <td class="expense">KES {{ "%.2f"|format(summary.total_expenses) }}</td>
-            <td class="profit {% if summary.net_profit >= 0 %}positive{% else %}negative{% endif %}">
-                KES {{ "%.2f"|format(summary.net_profit) }}
+            <td>KES {{ "%.2f"|format(summary.total_collections|default(0)) }}</td>
+            <td class="expense">KES {{ "%.2f"|format(summary.total_expenses|default(0)) }}</td>
+            <td class="profit {% if summary.net_profit|default(0) >= 0 %}positive{% else %}negative{% endif %}">
+                KES {{ "%.2f"|format(summary.net_profit|default(0)) }}
             </td>
-            <td>{{ summary.trip_count }}</td>
+            <td>{{ summary.trip_count|default(0) }}</td>
         </tr>
     </table>
 
@@ -154,11 +154,11 @@
             <th>Repair Expense</th>
         </tr>
         <tr>
-            <td>{{ summary.active_days }}</td>
-            <td>{{ summary.total_days }}</td>
-            <td>{{ "%.1f"|format(summary.utilization_rate) }}%</td>
-            <td class="expense">KES {{ "%.2f"|format(summary.fuel_expense) }}</td>
-            <td class="expense">KES {{ "%.2f"|format(summary.repair_expense) }}</td>
+            <td>{{ summary.active_days|default(0) }}</td>
+            <td>{{ summary.total_days|default(0) }}</td>
+            <td>{{ "%.1f"|format(summary.utilization_rate|default(0)) }}%</td>
+            <td class="expense">KES {{ "%.2f"|format(summary.fuel_expense|default(0)) }}</td>
+            <td class="expense">KES {{ "%.2f"|format(summary.repair_expense|default(0)) }}</td>
         </tr>
     </table>
 
@@ -171,18 +171,18 @@
         </tr>
         <tr>
             <td>Fuel</td>
-            <td>KES {{ "%.2f"|format(summary.fuel_expense) }}</td>
-            <td>{{ "%.1f"|format(summary.fuel_expense / summary.total_expenses * 100 if summary.total_expenses > 0 else 0) }}%</td>
+            <td>KES {{ "%.2f"|format(summary.fuel_expense|default(0)) }}</td>
+            <td>{{ "%.1f"|format(summary.fuel_expense|default(0) / summary.total_expenses|default(0) * 100 if summary.total_expenses|default(0) > 0 else 0) }}%</td>
         </tr>
         <tr>
             <td>Repairs</td>
-            <td>KES {{ "%.2f"|format(summary.repair_expense) }}</td>
-            <td>{{ "%.1f"|format(summary.repair_expense / summary.total_expenses * 100 if summary.total_expenses > 0 else 0) }}%</td>
+            <td>KES {{ "%.2f"|format(summary.repair_expense|default(0)) }}</td>
+            <td>{{ "%.1f"|format(summary.repair_expense|default(0) / summary.total_expenses|default(0) * 100 if summary.total_expenses|default(0) > 0 else 0) }}%</td>
         </tr>
         <tr>
             <td>Other</td>
-            <td>KES {{ "%.2f"|format(summary.other_expense) }}</td>
-            <td>{{ "%.1f"|format(summary.other_expense / summary.total_expenses * 100 if summary.total_expenses > 0 else 0) }}%</td>
+            <td>KES {{ "%.2f"|format(summary.other_expense|default(0)) }}</td>
+            <td>{{ "%.1f"|format(summary.other_expense|default(0) / summary.total_expenses|default(0) * 100 if summary.total_expenses|default(0) > 0 else 0) }}%</td>
         </tr>
     </table>
 
@@ -202,13 +202,13 @@
                 <th>Utilization</th>
             </tr>
             <tr>
-                <td>KES {{ "%.2f"|format(vehicle.total_collections) }}</td>
-                <td class="expense">KES {{ "%.2f"|format(vehicle.total_expenses) }}</td>
-                <td class="{% if vehicle.total_collections - vehicle.total_expenses >= 0 %}positive{% else %}negative{% endif %}">
-                    KES {{ "%.2f"|format(vehicle.total_collections - vehicle.total_expenses) }}
+                <td>KES {{ "%.2f"|format(vehicle.total_collections|default(0)) }}</td>
+                <td class="expense">KES {{ "%.2f"|format(vehicle.total_expenses|default(0)) }}</td>
+                <td class="{% if vehicle.total_collections|default(0) - vehicle.total_expenses|default(0) >= 0 %}positive{% else %}negative{% endif %}">
+                    KES {{ "%.2f"|format(vehicle.total_collections|default(0) - vehicle.total_expenses|default(0)) }}
                 </td>
-                <td>{{ vehicle.trip_count }}</td>
-                <td>{{ "%.1f"|format(vehicle.utilization_rate) }}%</td>
+                <td>{{ vehicle.trip_count|default(0) }}</td>
+                <td>{{ "%.1f"|format(vehicle.utilization_rate|default(0)) }}%</td>
             </tr>
         </table>
 
@@ -222,8 +222,8 @@
             {% for driver in vehicle.drivers %}
             <tr>
                 <td>{{ driver.name }}</td>
-                <td>{{ driver.trip_count }}</td>
-                <td>KES {{ "%.2f"|format(driver.total_collections) }}</td>
+                <td>{{ driver.trip_count|default(0) }}</td>
+                <td>KES {{ "%.2f"|format(driver.total_collections|default(0)) }}</td>
             </tr>
             {% endfor %}
         </table>
@@ -246,10 +246,10 @@
                 <th>Collection Efficiency</th>
             </tr>
             <tr>
-                <td>KES {{ "%.2f"|format(driver.total_collections) }}</td>
-                <td>{{ driver.trip_count }}</td>
-                <td>KES {{ "%.2f"|format(driver.avg_per_trip) }}</td>
-                <td>{{ "%.1f"|format(driver.collection_efficiency) }}%</td>
+                <td>KES {{ "%.2f"|format(driver.total_collections|default(0)) }}</td>
+                <td>{{ driver.trip_count|default(0) }}</td>
+                <td>KES {{ "%.2f"|format(driver.avg_per_trip|default(0)) }}</td>
+                <td>{{ "%.1f"|format(driver.collection_efficiency|default(0)) }}%</td>
             </tr>
         </table>
 
@@ -263,8 +263,8 @@
             {% for vehicle in driver.vehicles %}
             <tr>
                 <td>{{ vehicle.registration }}</td>
-                <td>{{ vehicle.trip_count }}</td>
-                <td>KES {{ "%.2f"|format(vehicle.total_collections) }}</td>
+                <td>{{ vehicle.trip_count|default(0) }}</td>
+                <td>KES {{ "%.2f"|format(vehicle.total_collections|default(0)) }}</td>
             </tr>
             {% endfor %}
         </table>
@@ -284,12 +284,12 @@
         {% for day in daily_data %}
         <tr>
             <td>{{ day.date }}</td>
-            <td>KES {{ "%.2f"|format(day.collections) }}</td>
-            <td>KES {{ "%.2f"|format(day.expenses) }}</td>
-            <td class="{% if day.collections - day.expenses >= 0 %}positive{% else %}negative{% endif %}">
-                KES {{ "%.2f"|format(day.collections - day.expenses) }}
+            <td>KES {{ "%.2f"|format(day.collections|default(0)) }}</td>
+            <td>KES {{ "%.2f"|format(day.expenses|default(0)) }}</td>
+            <td class="{% if day.collections|default(0) - day.expenses|default(0) >= 0 %}positive{% else %}negative{% endif %}">
+                KES {{ "%.2f"|format(day.collections|default(0) - day.expenses|default(0)) }}
             </td>
-            <td>{{ day.trips }}</td>
+            <td>{{ day.trips|default(0) }}</td>
         </tr>
         {% endfor %}
     </table>

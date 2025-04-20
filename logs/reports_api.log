@@ -1,0 +1,243 @@
+2025-04-20 19:10:56,768 - app.api.reports - INFO - Reports API logger initialized
+2025-04-20 19:11:12,425 - app.api.reports - INFO - Reports API logger initialized
+2025-04-20 19:11:15,005 - app.api.reports - INFO - Generating driver report for driver_id=f2401712-b952-4c5d-a336-da25ecd50043, format=pdf
+2025-04-20 19:11:15,005 - app.api.reports - INFO - Using provided start_date: 2024-12-31
+2025-04-20 19:11:15,006 - app.api.reports - INFO - Using provided end_date: 2025-04-20
+2025-04-20 19:11:15,006 - app.api.reports - INFO - Checking if driver with ID f2401712-b952-4c5d-a336-da25ecd50043 exists
+2025-04-20 19:11:16,123 - app.api.reports - INFO - Found driver: Hugh Jackman
+2025-04-20 19:11:16,124 - app.api.reports - INFO - Fetching trip data for driver from 2024-12-31 to 2025-04-20
+2025-04-20 19:11:16,124 - app.api.reports - ERROR - Unhandled exception in generate_driver_report: fetch_trip_data() got an unexpected keyword argument 'driver_id'
+2025-04-20 19:11:16,126 - app.api.reports - ERROR - Traceback (most recent call last):
+  File "C:\Users\nmwangi\merc_projects\mat-app-backend\app\api\reports.py", line 335, in generate_driver_report
+    trips = fetch_trip_data(parsed_start_date, parsed_end_date, driver_id=driver_id)
+TypeError: fetch_trip_data() got an unexpected keyword argument 'driver_id'
+
+2025-04-20 19:12:00,133 - app.api.reports - INFO - Reports API logger initialized
+2025-04-20 19:12:17,229 - app.api.reports - INFO - Generating driver report for driver_id=f2401712-b952-4c5d-a336-da25ecd50043, format=pdf
+2025-04-20 19:12:17,230 - app.api.reports - INFO - Using provided start_date: 2024-12-31
+2025-04-20 19:12:17,230 - app.api.reports - INFO - Using provided end_date: 2025-04-20
+2025-04-20 19:12:17,231 - app.api.reports - INFO - Checking if driver with ID f2401712-b952-4c5d-a336-da25ecd50043 exists
+2025-04-20 19:12:18,173 - app.api.reports - INFO - Found driver: Hugh Jackman
+2025-04-20 19:12:18,174 - app.api.reports - INFO - Fetching trip data for driver from 2024-12-31 to 2025-04-20
+2025-04-20 19:12:18,175 - app.api.reports - INFO - Fetching trip data from 2024-12-31 to 2025-04-20
+2025-04-20 19:12:18,175 - app.api.reports - DEBUG - Vehicle IDs: None, Driver IDs: f2401712-b952-4c5d-a336-da25ecd50043
+2025-04-20 19:12:19,208 - app.api.reports - INFO - Found 4 trips
+2025-04-20 19:12:19,210 - app.api.reports - INFO - Found 4 trips for driver
+2025-04-20 19:12:19,210 - app.api.reports - INFO - Enriching 4 trips with additional data
+2025-04-20 19:12:22,779 - app.api.reports - INFO - Successfully enriched 4 trips
+2025-04-20 19:12:22,779 - app.api.reports - INFO - Processing driver performance metrics
+2025-04-20 19:12:22,780 - app.api.reports - INFO - Driver metrics calculated: trips=4, collections=35000.0, expenses=1000.0
+2025-04-20 19:12:22,780 - app.api.reports - INFO - Processing daily performance for 4 trips
+2025-04-20 19:12:22,781 - app.api.reports - INFO - Processed 3 daily performance records
+2025-04-20 19:12:22,781 - app.api.reports - DEBUG - Report context prepared with keys: ['driver', 'trips', 'daily_data', 'start_date', 'end_date', 'report_date']
+2025-04-20 19:12:22,782 - app.api.reports - INFO - Rendering PDF report
+2025-04-20 19:12:22,783 - app.api.reports - INFO - Starting PDF rendering for template: driver_report.html
+2025-04-20 19:12:22,812 - app.api.reports - DEBUG - Rendering template with context keys: ['driver', 'trips', 'daily_data', 'start_date', 'end_date', 'report_date']
+2025-04-20 19:12:22,813 - app.api.reports - DEBUG - Converting HTML to PDF
+2025-04-20 19:12:22,934 - app.api.reports - INFO - PDF rendering completed successfully
+2025-04-20 19:12:22,935 - app.api.reports - INFO - PDF report generated, filename: driver_report_Hugh_Jackman_20241231.pdf
+2025-04-20 19:29:05,585 - app.api.reports - INFO - Reports API logger initialized
+2025-04-20 19:29:09,739 - app.api.reports - INFO - Reports API logger initialized
+2025-04-20 19:31:09,950 - app.api.reports - INFO - Reports API logger initialized
+2025-04-20 19:31:15,030 - app.api.reports - INFO - Generating driver report for driver_id=a2f29353-49c6-40ed-a9ec-8f04ba0b3acc, format=pdf
+2025-04-20 19:31:15,031 - app.api.reports - INFO - Using provided start_date: 2024-12-31
+2025-04-20 19:31:15,032 - app.api.reports - INFO - Using provided end_date: 2025-04-20
+2025-04-20 19:31:15,033 - app.api.reports - INFO - Checking if driver with ID a2f29353-49c6-40ed-a9ec-8f04ba0b3acc exists
+2025-04-20 19:31:16,707 - app.api.reports - INFO - Found driver: Nelson DevTest
+2025-04-20 19:31:16,708 - app.api.reports - INFO - Fetching trip data for driver from 2024-12-31 to 2025-04-20
+2025-04-20 19:31:16,710 - app.api.reports - ERROR - Unhandled exception in generate_driver_report: fetch_trip_data() got an unexpected keyword argument 'driver_id'
+2025-04-20 19:31:16,710 - app.api.reports - ERROR - Traceback (most recent call last):
+  File "C:\Users\nmwangi\merc_projects\mat-app-backend\app\api\reports.py", line 335, in generate_driver_report
+    trips = fetch_trip_data(parsed_start_date, parsed_end_date, driver_id=driver_id)
+TypeError: fetch_trip_data() got an unexpected keyword argument 'driver_id'
+
+2025-04-20 19:31:22,741 - app.api.reports - INFO - Generating driver report for driver_id=a2f29353-49c6-40ed-a9ec-8f04ba0b3acc, format=pdf
+2025-04-20 19:31:22,742 - app.api.reports - INFO - Using provided start_date: 2024-12-31
+2025-04-20 19:31:22,743 - app.api.reports - INFO - Using provided end_date: 2025-04-20
+2025-04-20 19:31:22,744 - app.api.reports - INFO - Checking if driver with ID a2f29353-49c6-40ed-a9ec-8f04ba0b3acc exists
+2025-04-20 19:31:23,778 - app.api.reports - INFO - Found driver: Nelson DevTest
+2025-04-20 19:31:23,779 - app.api.reports - INFO - Fetching trip data for driver from 2024-12-31 to 2025-04-20
+2025-04-20 19:31:23,780 - app.api.reports - ERROR - Unhandled exception in generate_driver_report: fetch_trip_data() got an unexpected keyword argument 'driver_id'
+2025-04-20 19:31:23,781 - app.api.reports - ERROR - Traceback (most recent call last):
+  File "C:\Users\nmwangi\merc_projects\mat-app-backend\app\api\reports.py", line 335, in generate_driver_report
+    trips = fetch_trip_data(parsed_start_date, parsed_end_date, driver_id=driver_id)
+TypeError: fetch_trip_data() got an unexpected keyword argument 'driver_id'
+
+2025-04-20 19:32:04,811 - app.api.reports - INFO - Generating driver report for driver_id=a2f29353-49c6-40ed-a9ec-8f04ba0b3acc, format=pdf
+2025-04-20 19:32:04,813 - app.api.reports - INFO - Using provided start_date: 2024-12-31
+2025-04-20 19:32:04,814 - app.api.reports - INFO - Using provided end_date: 2025-04-20
+2025-04-20 19:32:04,816 - app.api.reports - INFO - Checking if driver with ID a2f29353-49c6-40ed-a9ec-8f04ba0b3acc exists
+2025-04-20 19:32:05,309 - app.api.reports - INFO - Found driver: Nelson DevTest
+2025-04-20 19:32:05,309 - app.api.reports - INFO - Fetching trip data for driver from 2024-12-31 to 2025-04-20
+2025-04-20 19:32:05,310 - app.api.reports - ERROR - Unhandled exception in generate_driver_report: fetch_trip_data() got an unexpected keyword argument 'driver_id'
+2025-04-20 19:32:05,311 - app.api.reports - ERROR - Traceback (most recent call last):
+  File "C:\Users\nmwangi\merc_projects\mat-app-backend\app\api\reports.py", line 335, in generate_driver_report
+    trips = fetch_trip_data(parsed_start_date, parsed_end_date, driver_ids=driver_id)
+TypeError: fetch_trip_data() got an unexpected keyword argument 'driver_id'
+
+2025-04-20 19:32:22,755 - app.api.reports - INFO - Reports API logger initialized
+2025-04-20 19:32:26,499 - app.api.reports - INFO - Reports API logger initialized
+2025-04-20 19:32:30,331 - app.api.reports - INFO - Generating driver report for driver_id=f2401712-b952-4c5d-a336-da25ecd50043, format=pdf
+2025-04-20 19:32:30,332 - app.api.reports - INFO - Using provided start_date: 2024-12-31
+2025-04-20 19:32:30,333 - app.api.reports - INFO - Using provided end_date: 2025-04-20
+2025-04-20 19:32:30,334 - app.api.reports - INFO - Checking if driver with ID f2401712-b952-4c5d-a336-da25ecd50043 exists
+2025-04-20 19:32:31,881 - app.api.reports - INFO - Found driver: Hugh Jackman
+2025-04-20 19:32:31,881 - app.api.reports - INFO - Fetching trip data for driver from 2024-12-31 to 2025-04-20
+2025-04-20 19:32:31,882 - app.api.reports - INFO - Fetching trip data from 2024-12-31 to 2025-04-20
+2025-04-20 19:32:31,883 - app.api.reports - DEBUG - Vehicle IDs: None, Driver IDs: f2401712-b952-4c5d-a336-da25ecd50043
+2025-04-20 19:32:32,992 - app.api.reports - INFO - Found 4 trips
+2025-04-20 19:32:32,993 - app.api.reports - INFO - Found 4 trips for driver
+2025-04-20 19:32:32,994 - app.api.reports - INFO - Enriching 4 trips with additional data
+2025-04-20 19:32:36,792 - app.api.reports - INFO - Successfully enriched 4 trips
+2025-04-20 19:32:36,792 - app.api.reports - INFO - Processing driver performance metrics
+2025-04-20 19:32:36,793 - app.api.reports - INFO - Driver metrics calculated: trips=4, collections=35000.0, expenses=1000.0
+2025-04-20 19:32:36,793 - app.api.reports - INFO - Processing daily performance for 4 trips
+2025-04-20 19:32:36,794 - app.api.reports - INFO - Processed 3 daily performance records
+2025-04-20 19:32:36,794 - app.api.reports - DEBUG - Report context prepared with keys: ['driver', 'trips', 'daily_data', 'start_date', 'end_date', 'report_date']
+2025-04-20 19:32:36,795 - app.api.reports - INFO - Rendering PDF report
+2025-04-20 19:32:36,795 - app.api.reports - INFO - Starting PDF rendering for template: driver_report.html
+2025-04-20 19:32:36,812 - app.api.reports - DEBUG - Rendering template with context keys: ['driver', 'trips', 'daily_data', 'start_date', 'end_date', 'report_date']
+2025-04-20 19:32:36,812 - app.api.reports - DEBUG - Converting HTML to PDF
+2025-04-20 19:32:36,976 - app.api.reports - INFO - PDF rendering completed successfully
+2025-04-20 19:32:36,976 - app.api.reports - INFO - PDF report generated, filename: driver_report_Hugh_Jackman_20241231.pdf
+2025-04-20 19:32:41,697 - app.api.reports - INFO - Generating driver report for driver_id=a2f29353-49c6-40ed-a9ec-8f04ba0b3acc, format=pdf
+2025-04-20 19:32:41,699 - app.api.reports - INFO - Using provided start_date: 2024-12-31
+2025-04-20 19:32:41,699 - app.api.reports - INFO - Using provided end_date: 2025-04-20
+2025-04-20 19:32:41,700 - app.api.reports - INFO - Checking if driver with ID a2f29353-49c6-40ed-a9ec-8f04ba0b3acc exists
+2025-04-20 19:32:42,412 - app.api.reports - INFO - Found driver: Nelson DevTest
+2025-04-20 19:32:42,412 - app.api.reports - INFO - Fetching trip data for driver from 2024-12-31 to 2025-04-20
+2025-04-20 19:32:42,413 - app.api.reports - INFO - Fetching trip data from 2024-12-31 to 2025-04-20
+2025-04-20 19:32:42,413 - app.api.reports - DEBUG - Vehicle IDs: None, Driver IDs: a2f29353-49c6-40ed-a9ec-8f04ba0b3acc
+2025-04-20 19:32:42,789 - app.api.reports - INFO - Found 3 trips
+2025-04-20 19:32:42,791 - app.api.reports - INFO - Found 3 trips for driver
+2025-04-20 19:32:42,791 - app.api.reports - INFO - Enriching 3 trips with additional data
+2025-04-20 19:32:47,337 - app.api.reports - INFO - Successfully enriched 3 trips
+2025-04-20 19:32:47,337 - app.api.reports - INFO - Processing driver performance metrics
+2025-04-20 19:32:47,339 - app.api.reports - INFO - Driver metrics calculated: trips=3, collections=28000.0, expenses=1000.0
+2025-04-20 19:32:47,340 - app.api.reports - INFO - Processing daily performance for 3 trips
+2025-04-20 19:32:47,341 - app.api.reports - INFO - Processed 3 daily performance records
+2025-04-20 19:32:47,341 - app.api.reports - DEBUG - Report context prepared with keys: ['driver', 'trips', 'daily_data', 'start_date', 'end_date', 'report_date']
+2025-04-20 19:32:47,342 - app.api.reports - INFO - Rendering PDF report
+2025-04-20 19:32:47,343 - app.api.reports - INFO - Starting PDF rendering for template: driver_report.html
+2025-04-20 19:32:47,344 - app.api.reports - DEBUG - Rendering template with context keys: ['driver', 'trips', 'daily_data', 'start_date', 'end_date', 'report_date']
+2025-04-20 19:32:47,347 - app.api.reports - DEBUG - Converting HTML to PDF
+2025-04-20 19:32:47,530 - app.api.reports - INFO - PDF rendering completed successfully
+2025-04-20 19:32:47,531 - app.api.reports - INFO - PDF report generated, filename: driver_report_Nelson_DevTest_20241231.pdf
+2025-04-20 19:35:56,826 - app.api.reports - INFO - Generating driver report for driver_id=f2401712-b952-4c5d-a336-da25ecd50043, format=pdf
+2025-04-20 19:35:56,829 - app.api.reports - INFO - Using provided start_date: 2024-12-31
+2025-04-20 19:35:56,830 - app.api.reports - INFO - Using provided end_date: 2025-04-20
+2025-04-20 19:35:56,831 - app.api.reports - INFO - Checking if driver with ID f2401712-b952-4c5d-a336-da25ecd50043 exists
+2025-04-20 19:35:58,027 - app.api.reports - INFO - Found driver: Hugh Jackman
+2025-04-20 19:35:58,028 - app.api.reports - INFO - Fetching trip data for driver from 2024-12-31 to 2025-04-20
+2025-04-20 19:35:58,030 - app.api.reports - INFO - Fetching trip data from 2024-12-31 to 2025-04-20
+2025-04-20 19:35:58,031 - app.api.reports - DEBUG - Vehicle IDs: None, Driver IDs: f2401712-b952-4c5d-a336-da25ecd50043
+2025-04-20 19:35:58,440 - app.api.reports - INFO - Found 4 trips
+2025-04-20 19:35:58,441 - app.api.reports - INFO - Found 4 trips for driver
+2025-04-20 19:35:58,442 - app.api.reports - INFO - Enriching 4 trips with additional data
+2025-04-20 19:36:02,342 - app.api.reports - INFO - Successfully enriched 4 trips
+2025-04-20 19:36:02,343 - app.api.reports - INFO - Processing driver performance metrics
+2025-04-20 19:36:02,343 - app.api.reports - INFO - Driver metrics calculated: trips=4, collections=35000.0, expenses=1000.0
+2025-04-20 19:36:02,344 - app.api.reports - INFO - Processing daily performance for 4 trips
+2025-04-20 19:36:02,345 - app.api.reports - INFO - Processed 3 daily performance records
+2025-04-20 19:36:02,346 - app.api.reports - DEBUG - Report context prepared with keys: ['driver', 'trips', 'daily_data', 'start_date', 'end_date', 'report_date']
+2025-04-20 19:36:02,346 - app.api.reports - INFO - Rendering PDF report
+2025-04-20 19:36:02,347 - app.api.reports - INFO - Starting PDF rendering for template: driver_report.html
+2025-04-20 19:36:02,348 - app.api.reports - DEBUG - Rendering template with context keys: ['driver', 'trips', 'daily_data', 'start_date', 'end_date', 'report_date']
+2025-04-20 19:36:02,349 - app.api.reports - DEBUG - Converting HTML to PDF
+2025-04-20 19:36:02,510 - app.api.reports - INFO - PDF rendering completed successfully
+2025-04-20 19:36:02,511 - app.api.reports - INFO - PDF report generated, filename: driver_report_Hugh_Jackman_20241231.pdf
+2025-04-20 19:41:03,597 - app.api.reports - INFO - Reports API logger initialized
+2025-04-20 19:49:27,170 - app.api.reports - INFO - Reports API logger initialized
+2025-04-20 19:49:35,189 - app.api.reports - INFO - Reports API logger initialized
+2025-04-20 20:00:24,652 - app.api.reports - INFO - Reports API logger initialized
+2025-04-20 20:00:29,378 - app.api.reports - INFO - Reports API logger initialized
+2025-04-20 20:00:31,796 - app.api.reports - INFO - Reports API logger initialized
+2025-04-20 20:00:56,827 - app.api.reports - INFO - Reports API logger initialized
+2025-04-20 20:00:59,322 - app.api.reports - INFO - Reports API logger initialized
+2025-04-20 20:01:02,722 - app.api.reports - INFO - Reports API logger initialized
+2025-04-20 20:01:21,448 - app.api.reports - INFO - Reports API logger initialized
+2025-04-20 20:01:58,474 - app.api.reports - INFO - Reports API logger initialized
+2025-04-20 20:02:01,494 - app.api.reports - INFO - Reports API logger initialized
+2025-04-20 20:02:05,440 - app.api.reports - INFO - Reports API logger initialized
+2025-04-20 20:02:09,181 - app.api.reports - INFO - Reports API logger initialized
+2025-04-20 20:02:12,344 - app.api.reports - INFO - Fetching trip data from 2025-03-21 to 2025-04-20
+2025-04-20 20:02:12,345 - app.api.reports - DEBUG - Vehicle IDs: 5e9da98b-663b-4f20-9b14-be79b3c374fd, Driver IDs: None
+2025-04-20 20:02:12,763 - app.api.reports - INFO - Found 0 trips
+2025-04-20 20:02:12,764 - app.api.reports - INFO - Enriching 0 trips with additional data
+2025-04-20 20:02:12,765 - app.api.reports - INFO - Successfully enriched 0 trips
+2025-04-20 20:02:12,767 - app.api.reports - INFO - Processing daily performance for 0 trips
+2025-04-20 20:02:12,767 - app.api.reports - INFO - Processed 0 daily performance records
+2025-04-20 20:02:12,768 - app.api.reports - INFO - Starting PDF rendering for template: vehicle_report.html
+2025-04-20 20:02:12,817 - app.api.reports - DEBUG - Rendering template with context keys: ['vehicle', 'trips', 'daily_data', 'vehicle_drivers', 'vehicle_routes', 'start_date', 'end_date', 'report_date']
+2025-04-20 20:02:12,818 - app.api.reports - DEBUG - Converting HTML to PDF
+2025-04-20 20:02:12,897 - app.api.reports - INFO - PDF rendering completed successfully
+2025-04-20 20:05:20,344 - app.api.reports - INFO - Fetching trip data from 2025-03-21 to 2025-04-20
+2025-04-20 20:05:20,345 - app.api.reports - DEBUG - Vehicle IDs: 5e9da98b-663b-4f20-9b14-be79b3c374fd, Driver IDs: None
+2025-04-20 20:05:20,676 - app.api.reports - INFO - Found 0 trips
+2025-04-20 20:05:20,677 - app.api.reports - INFO - Enriching 0 trips with additional data
+2025-04-20 20:05:20,678 - app.api.reports - INFO - Successfully enriched 0 trips
+2025-04-20 20:05:20,678 - app.api.reports - INFO - Processing daily performance for 0 trips
+2025-04-20 20:05:20,678 - app.api.reports - INFO - Processed 0 daily performance records
+2025-04-20 20:37:17,016 - app.api.reports - INFO - Reports API logger initialized
+2025-04-20 21:08:37,780 - app.api.reports - INFO - Generating driver report for driver_id=f2401712-b952-4c5d-a336-da25ecd50043, format=pdf
+2025-04-20 21:08:37,781 - app.api.reports - INFO - Using provided start_date: 2025-02-01
+2025-04-20 21:08:37,781 - app.api.reports - INFO - Using provided end_date: 2025-04-20
+2025-04-20 21:08:37,782 - app.api.reports - INFO - Checking if driver with ID f2401712-b952-4c5d-a336-da25ecd50043 exists
+2025-04-20 21:08:38,266 - app.api.reports - INFO - Found driver: Hugh Jackman
+2025-04-20 21:08:38,267 - app.api.reports - INFO - Fetching trip data for driver from 2025-02-01 to 2025-04-20
+2025-04-20 21:08:38,268 - app.api.reports - INFO - Fetching trip data from 2025-02-01 to 2025-04-20
+2025-04-20 21:08:38,268 - app.api.reports - DEBUG - Vehicle IDs: None, Driver IDs: f2401712-b952-4c5d-a336-da25ecd50043
+2025-04-20 21:08:38,619 - app.api.reports - INFO - Found 4 trips
+2025-04-20 21:08:38,620 - app.api.reports - INFO - Found 4 trips for driver
+2025-04-20 21:08:38,620 - app.api.reports - INFO - Enriching 4 trips with additional data
+2025-04-20 21:08:41,606 - app.api.reports - INFO - Successfully enriched 4 trips
+2025-04-20 21:08:41,607 - app.api.reports - INFO - Processing driver performance metrics
+2025-04-20 21:08:41,608 - app.api.reports - INFO - Driver metrics calculated: trips=4, collections=35000.0, expenses=1000.0
+2025-04-20 21:08:41,609 - app.api.reports - INFO - Processing daily performance for 4 trips
+2025-04-20 21:08:41,609 - app.api.reports - INFO - Processed 3 daily performance records
+2025-04-20 21:08:41,610 - app.api.reports - DEBUG - Report context prepared with keys: ['driver', 'trips', 'daily_data', 'start_date', 'end_date', 'report_date']
+2025-04-20 21:08:41,611 - app.api.reports - INFO - Rendering PDF report
+2025-04-20 21:08:41,612 - app.api.reports - INFO - Starting PDF rendering for template: driver_report.html
+2025-04-20 21:08:41,659 - app.api.reports - DEBUG - Rendering template with context keys: ['driver', 'trips', 'daily_data', 'start_date', 'end_date', 'report_date']
+2025-04-20 21:08:41,660 - app.api.reports - DEBUG - Converting HTML to PDF
+2025-04-20 21:08:41,812 - app.api.reports - INFO - PDF rendering completed successfully
+2025-04-20 21:08:41,812 - app.api.reports - INFO - PDF report generated, filename: Hugh_Jackman_20250201_report.pdf
+2025-04-20 21:09:13,761 - app.api.reports - INFO - Fetching trip data from 2025-03-06 to 2025-04-20
+2025-04-20 21:09:13,762 - app.api.reports - DEBUG - Vehicle IDs: 5e9da98b-663b-4f20-9b14-be79b3c374fd, Driver IDs: None
+2025-04-20 21:09:14,248 - app.api.reports - INFO - Found 0 trips
+2025-04-20 21:09:14,249 - app.api.reports - INFO - Enriching 0 trips with additional data
+2025-04-20 21:09:14,249 - app.api.reports - INFO - Successfully enriched 0 trips
+2025-04-20 21:09:14,250 - app.api.reports - INFO - Processing daily performance for 0 trips
+2025-04-20 21:09:14,250 - app.api.reports - INFO - Processed 0 daily performance records
+2025-04-20 21:09:14,251 - app.api.reports - INFO - Starting PDF rendering for template: vehicle_report.html
+2025-04-20 21:09:14,252 - app.api.reports - DEBUG - Rendering template with context keys: ['vehicle', 'trips', 'daily_data', 'vehicle_drivers', 'vehicle_routes', 'start_date', 'end_date', 'report_date']
+2025-04-20 21:09:14,252 - app.api.reports - DEBUG - Converting HTML to PDF
+2025-04-20 21:09:14,363 - app.api.reports - INFO - PDF rendering completed successfully
+2025-04-20 21:15:42,310 - app.api.reports - INFO - Generating driver report for driver_id=f2401712-b952-4c5d-a336-da25ecd50043, format=pdf
+2025-04-20 21:15:42,311 - app.api.reports - INFO - Using provided start_date: 2025-03-21
+2025-04-20 21:15:42,312 - app.api.reports - INFO - Using provided end_date: 2025-04-20
+2025-04-20 21:15:42,312 - app.api.reports - INFO - Checking if driver with ID f2401712-b952-4c5d-a336-da25ecd50043 exists
+2025-04-20 21:15:42,804 - app.api.reports - INFO - Found driver: Hugh Jackman
+2025-04-20 21:15:42,805 - app.api.reports - INFO - Fetching trip data for driver from 2025-03-21 to 2025-04-20
+2025-04-20 21:15:42,805 - app.api.reports - INFO - Fetching trip data from 2025-03-21 to 2025-04-20
+2025-04-20 21:15:42,805 - app.api.reports - DEBUG - Vehicle IDs: None, Driver IDs: f2401712-b952-4c5d-a336-da25ecd50043
+2025-04-20 21:15:43,112 - app.api.reports - INFO - Found 4 trips
+2025-04-20 21:15:43,113 - app.api.reports - INFO - Found 4 trips for driver
+2025-04-20 21:15:43,114 - app.api.reports - INFO - Enriching 4 trips with additional data
+2025-04-20 21:15:45,772 - app.api.reports - INFO - Successfully enriched 4 trips
+2025-04-20 21:15:45,773 - app.api.reports - INFO - Processing driver performance metrics
+2025-04-20 21:15:45,775 - app.api.reports - INFO - Driver metrics calculated: trips=4, collections=35000.0, expenses=1000.0
+2025-04-20 21:15:45,775 - app.api.reports - INFO - Processing daily performance for 4 trips
+2025-04-20 21:15:45,776 - app.api.reports - INFO - Processed 3 daily performance records
+2025-04-20 21:15:45,777 - app.api.reports - DEBUG - Report context prepared with keys: ['driver', 'trips', 'daily_data', 'start_date', 'end_date', 'report_date']
+2025-04-20 21:15:45,778 - app.api.reports - INFO - Rendering PDF report
+2025-04-20 21:15:45,778 - app.api.reports - INFO - Starting PDF rendering for template: driver_report.html
+2025-04-20 21:15:45,779 - app.api.reports - DEBUG - Rendering template with context keys: ['driver', 'trips', 'daily_data', 'start_date', 'end_date', 'report_date']
+2025-04-20 21:15:45,780 - app.api.reports - DEBUG - Converting HTML to PDF
+2025-04-20 21:15:45,898 - app.api.reports - INFO - PDF rendering completed successfully
+2025-04-20 21:15:45,898 - app.api.reports - INFO - PDF report generated, filename: Hugh_Jackman_20250321_report.pdf
+2025-04-20 21:30:27,865 - app.api.reports - INFO - Reports API logger initialized
+2025-04-20 21:30:50,925 - app.api.reports - INFO - Reports API logger initialized
+2025-04-20 21:43:22,477 - app.api.reports - INFO - Reports API logger initialized
+2025-04-20 21:44:12,783 - app.api.reports - INFO - Reports API logger initialized
+2025-04-20 21:44:32,522 - app.api.reports - INFO - Reports API logger initialized

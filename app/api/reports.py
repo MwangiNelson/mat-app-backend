@@ -7,13 +7,49 @@ import base64
 import io
 from tempfile import NamedTemporaryFile
 import os
+import logging
+import traceback
+import sys
 
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, exceptions as jinja2_exceptions
 from xhtml2pdf import pisa
 
 from app.core.db import supabase
 from app.core.security import get_current_active_user
 from app.schemas.dashboard import ReportFormat, ReportResponse
+
+# Set up logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+# Create console handler with a higher log level
+ch = logging.StreamHandler(sys.stdout)
+ch.setLevel(logging.DEBUG)
+
+# Create file handler for persistent logs
+try:
+    log_dir = "logs"
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    fh = logging.FileHandler(os.path.join(log_dir, "reports_api.log"))
+    fh.setLevel(logging.DEBUG)
+except Exception as e:
+    # If file logging fails, just log to console
+    print(f"Warning: Could not set up file logging: {str(e)}")
+    fh = None
+
+# Create formatter and add it to the handlers
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+ch.setFormatter(formatter)
+if fh:
+    fh.setFormatter(formatter)
+
+# Add the handlers to logger
+logger.addHandler(ch)
+if fh:
+    logger.addHandler(fh)
+
+logger.info("Reports API logger initialized")
 
 router = APIRouter()
 
@@ -23,129 +59,210 @@ template_env = Environment(loader=FileSystemLoader("app/templates"))
 def render_template_to_pdf(template_name, context_data):
     """Render an HTML template to PDF and return the PDF bytes"""
     try:
+        logger.info(f"Starting PDF rendering for template: {template_name}")
+        
         # Get the template
         template = template_env.get_template(template_name)
         
         # Render the template with the context data
+        logger.debug(f"Rendering template with context keys: {list(context_data.keys())}")
         html = template.render(**context_data)
         
         # Convert HTML to PDF
         pdf_content = io.BytesIO()
-        pisa.CreatePDF(html, dest=pdf_content)
+        logger.debug("Converting HTML to PDF")
+        pisa_status = pisa.CreatePDF(html, dest=pdf_content)
+        
+        if pisa_status.err:
+            error_msg = f"PDF generation error: {pisa_status.err}"
+            logger.error(error_msg)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=error_msg
+            )
         
         # Reset file pointer to the beginning
         pdf_content.seek(0)
+        logger.info("PDF rendering completed successfully")
         
         return pdf_content
-    except Exception as e:
+    except jinja2_exceptions.TemplateError as e:
+        error_msg = f"Template error: {str(e)}"
+        logger.error(error_msg)
+        logger.error(traceback.format_exc())
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error rendering PDF: {str(e)}"
+            detail=error_msg
+        )
+    except Exception as e:
+        error_msg = f"Error rendering PDF: {str(e)}"
+        logger.error(error_msg)
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_msg
         )
 
 def fetch_trip_data(start_date, end_date, vehicle_ids=None, driver_ids=None):
     """Fetch trip data with optional filters for multiple vehicles and drivers"""
-    query = supabase.table("trips").select("*").gte("collection_time", start_date.isoformat()).lte("collection_time", end_date.isoformat())
-    
-    if vehicle_ids:
-        if isinstance(vehicle_ids, list):
-            query = query.in_("vehicle_id", vehicle_ids)
-        else:
-            query = query.eq("vehicle_id", vehicle_ids)
+    try:
+        logger.info(f"Fetching trip data from {start_date} to {end_date}")
+        logger.debug(f"Vehicle IDs: {vehicle_ids}, Driver IDs: {driver_ids}")
         
-    if driver_ids:
-        if isinstance(driver_ids, list):
-            query = query.in_("driver_id", driver_ids)
-        else:
-            query = query.eq("driver_id", driver_ids)
-    
-    response = query.order("collection_time", desc=True).execute()
-    return response.data
+        query = supabase.table("trips").select("*").gte("collection_time", start_date.isoformat()).lte("collection_time", end_date.isoformat())
+        
+        if vehicle_ids:
+            if isinstance(vehicle_ids, list):
+                query = query.in_("vehicle_id", vehicle_ids)
+            else:
+                query = query.eq("vehicle_id", vehicle_ids)
+            
+        if driver_ids:
+            if isinstance(driver_ids, list):
+                query = query.in_("driver_id", driver_ids)
+            else:
+                query = query.eq("driver_id", driver_ids)
+        
+        response = query.order("collection_time", desc=True).execute()
+        logger.info(f"Found {len(response.data)} trips")
+        return response.data
+    except Exception as e:
+        logger.error(f"Error fetching trip data: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise
 
 def enrich_trip_data(trips):
     """Enrich trip data with driver, vehicle and date/time info"""
-    enriched_trips = []
-    
-    for trip in trips:
-        # Get driver info
-        driver_response = supabase.table("drivers").select("name").eq("id", trip["driver_id"]).execute()
+    try:
+        logger.info(f"Enriching {len(trips)} trips with additional data")
+        enriched_trips = []
         
-        # Get vehicle info
-        vehicle_response = supabase.table("vehicles").select("reg_no").eq("id", trip["vehicle_id"]).execute()
+        for trip in trips:
+            try:
+                # Get driver info
+                driver_response = supabase.table("drivers").select("name").eq("id", trip["driver_id"]).execute()
+                
+                # Get vehicle info
+                vehicle_response = supabase.table("vehicles").select("reg_no").eq("id", trip["vehicle_id"]).execute()
+                
+                # Calculate efficiency
+                efficiency = 0
+                collected = float(trip.get("collected_amount", 0) or 0)
+                expected = 0
+                
+                # Safely handle expected_amount which might not exist in the database
+                if trip.get("expected_amount") and str(trip.get("expected_amount")).strip().lower() not in ["none", "null", ""]:
+                    try:
+                        expected = float(trip.get("expected_amount"))
+                        if expected > 0:
+                            efficiency = (collected / expected) * 100
+                    except (ValueError, TypeError) as err:
+                        logger.warning(f"Invalid expected_amount for trip {trip.get('id')}: {err}")
+                        expected = 0
+                
+                # Add date and time fields
+                collection_date = None
+                collection_time_only = None
+                if trip.get("collection_time"):
+                    try:
+                        dt_obj = datetime.fromisoformat(trip["collection_time"].replace('Z', '+00:00'))
+                        collection_date = dt_obj.strftime("%Y-%m-%d")
+                        collection_time_only = dt_obj.strftime("%H:%M:%S")
+                    except (ValueError, TypeError) as err:
+                        logger.warning(f"Invalid collection_time for trip {trip.get('id')}: {err}")
+                
+                # Ensure expense fields exist with default values
+                fuel_expense = 0
+                repair_expense = 0
+                other_expense = 0
+                
+                # Safely parse expense fields that might not exist
+                try:
+                    repair_expense = float(trip.get("repair_expense", 0) or 0)
+                except (ValueError, TypeError) as err:
+                    logger.warning(f"Invalid repair_expense for trip {trip.get('id')}: {err}")
+                    repair_expense = 0
+                    
+                try:
+                    fuel_expense = float(trip.get("fuel_expense", 0) or 0)
+                except (ValueError, TypeError) as err:
+                    logger.warning(f"Invalid fuel_expense for trip {trip.get('id')}: {err}")
+                    fuel_expense = 0
+                    
+                try:
+                    other_expense = float(trip.get("other_expense", 0) or 0)
+                except (ValueError, TypeError) as err:
+                    logger.warning(f"Invalid other_expense for trip {trip.get('id')}: {err}")
+                    other_expense = 0
+                    
+                total_trip_expense = fuel_expense + repair_expense + other_expense
+                
+                # Create enriched trip object
+                enriched_trip = {
+                    **trip,
+                    "driver_name": driver_response.data[0]["name"] if driver_response.data else "Unknown",
+                    "vehicle_registration": vehicle_response.data[0]["reg_no"] if vehicle_response.data else "Unknown",
+                    "efficiency": efficiency,
+                    "collection_date": collection_date,
+                    "collection_time_only": collection_time_only,
+                    "fuel_expense": fuel_expense,
+                    "repair_expense": repair_expense,
+                    "other_expense": other_expense,
+                    "total_expense": total_trip_expense,
+                    "expected_amount": expected  # Add expected_amount to the enriched trip
+                }
+                
+                enriched_trips.append(enriched_trip)
+            except Exception as trip_error:
+                logger.error(f"Error enriching trip {trip.get('id', 'unknown')}: {str(trip_error)}")
+                logger.debug(f"Trip data that caused error: {trip}")
+                # Continue with other trips instead of failing completely
         
-        # Get route info
-        route_response = None
-        if trip.get("route_id"):
-            route_response = supabase.table("routes").select("name,origin,destination").eq("id", trip["route_id"]).execute()
-        
-        # Calculate efficiency
-        efficiency = 0
-        if trip.get("expected_amount") and float(trip.get("expected_amount")) > 0:
-            collected = float(trip.get("collected_amount", 0) or 0)
-            expected = float(trip.get("expected_amount", 0) or 0)
-            efficiency = (collected / expected) * 100
-        
-        # Add date and time fields
-        collection_date = None
-        collection_time_only = None
-        if trip.get("collection_time"):
-            dt_obj = datetime.fromisoformat(trip["collection_time"].replace('Z', '+00:00'))
-            collection_date = dt_obj.strftime("%Y-%m-%d")
-            collection_time_only = dt_obj.strftime("%H:%M:%S")
-        
-        # Ensure expense fields exist with default values
-        fuel_expense = float(trip.get("fuel_expense", 0) or 0)
-        repair_expense = float(trip.get("repair_expense", 0) or 0)
-        other_expense = float(trip.get("other_expense", 0) or 0)
-        total_trip_expense = fuel_expense + repair_expense + other_expense
-        
-        # Create enriched trip object
-        enriched_trip = {
-            **trip,
-            "driver_name": driver_response.data[0]["name"] if driver_response.data else "Unknown",
-            "vehicle_registration": vehicle_response.data[0]["reg_no"] if vehicle_response.data else "Unknown",
-            "route_name": route_response.data[0]["name"] if route_response and route_response.data else None,
-            "origin": route_response.data[0]["origin"] if route_response and route_response.data else None,
-            "destination": route_response.data[0]["destination"] if route_response and route_response.data else None,
-            "efficiency": efficiency,
-            "collection_date": collection_date,
-            "collection_time_only": collection_time_only,
-            "fuel_expense": fuel_expense,
-            "repair_expense": repair_expense,
-            "other_expense": other_expense,
-            "total_expense": total_trip_expense
-        }
-        
-        enriched_trips.append(enriched_trip)
-    
-    return enriched_trips
+        logger.info(f"Successfully enriched {len(enriched_trips)} trips")
+        return enriched_trips
+    except Exception as e:
+        logger.error(f"Error in enrich_trip_data: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise
 
 def process_daily_performance(trips):
     """Process trips to get daily performance data"""
-    daily_data = {}
-    
-    for trip in trips:
-        if not trip.get("collection_date"):
-            continue
+    try:
+        logger.info(f"Processing daily performance for {len(trips)} trips")
+        daily_data = {}
+        
+        for trip in trips:
+            if not trip.get("collection_date"):
+                logger.warning(f"Trip {trip.get('id', 'unknown')} has no collection_date, skipping")
+                continue
+                
+            date_str = trip["collection_date"]
             
-        date_str = trip["collection_date"]
+            if date_str not in daily_data:
+                daily_data[date_str] = {
+                    "date": date_str,
+                    "collections": 0,
+                    "expenses": 0,
+                    "trips": 0
+                }
+            
+            # Add data
+            try:
+                daily_data[date_str]["collections"] += float(trip.get("collected_amount", 0) or 0)
+                daily_data[date_str]["expenses"] += float(trip.get("total_expense", 0) or 0)
+                daily_data[date_str]["trips"] += 1
+            except (ValueError, TypeError) as err:
+                logger.warning(f"Error adding trip {trip.get('id', 'unknown')} data for date {date_str}: {err}")
+                # Continue processing other fields
         
-        if date_str not in daily_data:
-            daily_data[date_str] = {
-                "date": date_str,
-                "collections": 0,
-                "expenses": 0,
-                "trips": 0
-            }
-        
-        # Add data
-        daily_data[date_str]["collections"] += float(trip.get("collected_amount", 0) or 0)
-        daily_data[date_str]["expenses"] += float(trip.get("total_expense", 0) or 0)
-        daily_data[date_str]["trips"] += 1
-    
-    # Convert to sorted list
-    result = [v for k, v in sorted(daily_data.items())]
-    return result
+        # Convert to sorted list
+        result = [v for k, v in sorted(daily_data.items())]
+        logger.info(f"Processed {len(result)} daily performance records")
+        return result
+    except Exception as e:
+        logger.error(f"Error in process_daily_performance: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise
 
 @router.get("/driver/{driver_id}", response_class=StreamingResponse)
 async def generate_driver_report(
@@ -165,16 +282,21 @@ async def generate_driver_report(
     - Complete trip logs
     """
     try:
+        logger.info(f"Generating driver report for driver_id={driver_id}, format={format}")
+        
         # Parse date strings if provided
         today = date.today()
         
         # Default to last 30 days if no dates provided
         if not start_date:
             parsed_start_date = today - timedelta(days=29)
+            logger.info(f"No start_date provided, using default: {parsed_start_date}")
         else:
             try:
                 parsed_start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
-            except ValueError:
+                logger.info(f"Using provided start_date: {parsed_start_date}")
+            except ValueError as e:
+                logger.error(f"Invalid start_date format: {start_date}, error: {str(e)}")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid start_date format. Use YYYY-MM-DD."
@@ -182,37 +304,46 @@ async def generate_driver_report(
         
         if not end_date:
             parsed_end_date = today
+            logger.info(f"No end_date provided, using default: {parsed_end_date}")
         else:
             try:
                 parsed_end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
-            except ValueError:
+                logger.info(f"Using provided end_date: {parsed_end_date}")
+            except ValueError as e:
+                logger.error(f"Invalid end_date format: {end_date}, error: {str(e)}")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid end_date format. Use YYYY-MM-DD."
                 )
         
         # Check if driver exists
+        logger.info(f"Checking if driver with ID {driver_id} exists")
         driver_response = supabase.table("drivers").select("*").eq("id", driver_id).execute()
         
         if not driver_response.data:
+            logger.error(f"Driver with ID {driver_id} not found")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Driver not found"
             )
         
         driver = driver_response.data[0]
+        logger.info(f"Found driver: {driver.get('name', 'Unknown')}")
         
         # Get and enrich trip data
-        trips = fetch_trip_data(parsed_start_date, parsed_end_date, driver_id=driver_id)
+        logger.info(f"Fetching trip data for driver from {parsed_start_date} to {parsed_end_date}")
+        trips = fetch_trip_data(parsed_start_date, parsed_end_date, driver_ids=driver_id)
+        logger.info(f"Found {len(trips)} trips for driver")
+        
         enriched_trips = enrich_trip_data(trips)
         
         # Process driver performance metrics
+        logger.info("Processing driver performance metrics")
         total_collections = 0
         total_expected = 0
         total_expenses = 0
         trip_count = len(enriched_trips)
         vehicles_data = {}
-        routes_data = {}
         
         for trip in enriched_trips:
             # Get basic metrics
@@ -240,36 +371,12 @@ async def generate_driver_report(
                 vehicles_data[vehicle_id]["trip_count"] += 1
                 vehicles_data[vehicle_id]["total_collections"] += collected_amount
             
-            # Track routes
-            route_id = trip.get("route_id")
-            route_name = trip.get("route_name")
-            
-            if route_id and route_name:
-                if route_id not in routes_data:
-                    routes_data[route_id] = {
-                        "route_id": route_id,
-                        "name": route_name,
-                        "trip_count": 0,
-                        "total_collections": 0,
-                        "total_expected": 0
-                    }
-                
-                routes_data[route_id]["trip_count"] += 1
-                routes_data[route_id]["total_collections"] += collected_amount
-                routes_data[route_id]["total_expected"] += expected_amount
-        
         # Calculate derived metrics
         avg_per_trip = total_collections / trip_count if trip_count > 0 else 0
         collection_efficiency = (total_collections / total_expected * 100) if total_expected > 0 else 0
         net_profit = total_collections - total_expenses
-        
-        # Calculate route efficiency
-        for route_id in routes_data:
-            route = routes_data[route_id]
-            if route["total_expected"] > 0:
-                route["efficiency"] = (route["total_collections"] / route["total_expected"]) * 100
-            else:
-                route["efficiency"] = 0
+
+        logger.info(f"Driver metrics calculated: trips={trip_count}, collections={total_collections}, expenses={total_expenses}")
         
         # Prepare driver performance data
         driver_performance = {
@@ -281,7 +388,6 @@ async def generate_driver_report(
             "avg_per_trip": avg_per_trip,
             "collection_efficiency": collection_efficiency,
             "vehicles_driven": list(vehicles_data.values()),
-            "routes_served": list(routes_data.values())
         }
         
         # Process daily performance
@@ -297,14 +403,18 @@ async def generate_driver_report(
             "report_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
         
+        logger.debug(f"Report context prepared with keys: {list(context.keys())}")
+        
         # Generate the report in the specified format
         if format == ReportFormat.HTML:
             # Render the HTML template directly
-            template = template_env.get_template("driver_report.html")
+            logger.info("Rendering HTML report")
+            template = template_env.get_template(f"driver_report.html")
             html_content = template.render(**context)
             
             # Return HTML response
-            filename = f"driver_report_{driver['name'].replace(' ', '_')}_{parsed_start_date.strftime('%Y%m%d')}.html"
+            filename = f"{driver['name'].replace(' ', '_')}_{parsed_start_date.strftime('%Y%m%d')}_report.html"
+            logger.info(f"HTML report generated, filename: {filename}")
             
             return StreamingResponse(
                 io.StringIO(html_content),
@@ -313,8 +423,10 @@ async def generate_driver_report(
             )
         else:
             # Render PDF
+            logger.info("Rendering PDF report")
             pdf_content = render_template_to_pdf("driver_report.html", context)
-            filename = f"driver_report_{driver['name'].replace(' ', '_')}_{parsed_start_date.strftime('%Y%m%d')}.pdf"
+            filename = f"{driver['name'].replace(' ', '_')}_{parsed_start_date.strftime('%Y%m%d')}_report.pdf"
+            logger.info(f"PDF report generated, filename: {filename}")
             
             return StreamingResponse(
                 pdf_content,
@@ -324,6 +436,8 @@ async def generate_driver_report(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Unhandled exception in generate_driver_report: {str(e)}")
+        logger.error(traceback.format_exc())
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating driver report: {str(e)}"
@@ -386,7 +500,7 @@ async def generate_vehicle_report(
         vehicle_base = vehicle_response.data[0]
         
         # Get and enrich trip data
-        trips = fetch_trip_data(parsed_start_date, parsed_end_date, vehicle_id=vehicle_id)
+        trips = fetch_trip_data(parsed_start_date, parsed_end_date, vehicle_ids=vehicle_id)
         enriched_trips = enrich_trip_data(trips)
         
         # Process vehicle performance metrics
@@ -492,7 +606,7 @@ async def generate_vehicle_report(
             html_content = template.render(**context)
             
             # Return HTML response
-            filename = f"vehicle_report_{vehicle_base['reg_no'].replace(' ', '_')}_{parsed_start_date.strftime('%Y%m%d')}.html"
+            filename = f"{vehicle_base['reg_no'].replace(' ', '_')}_{parsed_start_date.strftime('%Y%m%d')}_report.html"
             
             return StreamingResponse(
                 io.StringIO(html_content),
@@ -502,7 +616,7 @@ async def generate_vehicle_report(
         else:
             # Render PDF
             pdf_content = render_template_to_pdf("vehicle_report.html", context)
-            filename = f"vehicle_report_{vehicle_base['reg_no'].replace(' ', '_')}_{parsed_start_date.strftime('%Y%m%d')}.pdf"
+            filename = f"{vehicle_base['reg_no'].replace(' ', '_')}_{parsed_start_date.strftime('%Y%m%d')}_report.pdf"
             
             return StreamingResponse(
                 pdf_content,

@@ -8,12 +8,23 @@ class TimeSeriesData(BaseModel):
     label: str  # Date or time period
     value: float  # Value for that period
 
+class ExpiringLicense(BaseModel):
+    """Information about a license that is expiring"""
+    license: str
+    days_left: int
+
+class VehicleRenewal(BaseModel):
+    """Vehicle with expiring licenses"""
+    vehicle_name: str
+    expiring_licenses: List[ExpiringLicense]
+
 class DashboardOverview(BaseModel):
     """Dashboard overview statistics for the finance cards"""
     total_revenue_today: float
     active_vehicles_count: int
     total_vehicles_count: int  # Total number of vehicles
-    upcoming_renewals: int = 5  # Static value as specified
+    upcoming_renewals: int
+    renewals: List[VehicleRenewal] = []  # Detailed information about upcoming renewals
     avg_collection_per_vehicle: float
     revenue_comparison: float  # Revenue comparison between today and yesterday
     vehicle_utilization: float  # Vehicle utilization percentage

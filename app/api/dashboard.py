@@ -46,8 +46,48 @@ async def get_financial_overview(current_user = Depends(get_current_active_user)
         total_vehicles_response = supabase.table("vehicles").select("id").execute()
         total_vehicles_count = len(total_vehicles_response.data)
         
-        # 3. Upcoming Renewals - Static value as requested
-        upcoming_renewals = 5  # Static value as per requirements
+        # 3. Upcoming Renewals - Calculate based on expiry dates
+        # Get vehicles with any license expiring within the next 10 days
+        expiry_threshold = (today + timedelta(days=10)).isoformat()
+        
+        # Query vehicles with any expiry date within the threshold
+        upcoming_renewal_vehicles = supabase.table("vehicles").select("id,reg_no,insurance_expiry,tlb_expiry,inspection_expiry,speed_governor_expiry").or_(
+            f"insurance_expiry.gte.{today_str},insurance_expiry.lte.{expiry_threshold}," +
+            f"tlb_expiry.gte.{today_str},tlb_expiry.lte.{expiry_threshold}," +
+            f"inspection_expiry.gte.{today_str},inspection_expiry.lte.{expiry_threshold}," +
+            f"speed_governor_expiry.gte.{today_str},speed_governor_expiry.lte.{expiry_threshold}"
+        ).execute()
+        
+        # Count vehicles with upcoming renewals
+        upcoming_renewals = len(upcoming_renewal_vehicles.data)
+        
+        # Prepare detailed renewals information
+        renewals = []
+        for vehicle in upcoming_renewal_vehicles.data:
+            expiring_licenses = []
+            
+            # Check each expiry type
+            if vehicle.get("insurance_expiry") and today <= datetime.fromisoformat(vehicle["insurance_expiry"].replace('Z', '+00:00')).date() <= (today + timedelta(days=10)):
+                days_left = (datetime.fromisoformat(vehicle["insurance_expiry"].replace('Z', '+00:00')).date() - today).days
+                expiring_licenses.append({"license": "Insurance", "days_left": days_left})
+                
+            if vehicle.get("tlb_expiry") and today <= datetime.fromisoformat(vehicle["tlb_expiry"].replace('Z', '+00:00')).date() <= (today + timedelta(days=10)):
+                days_left = (datetime.fromisoformat(vehicle["tlb_expiry"].replace('Z', '+00:00')).date() - today).days
+                expiring_licenses.append({"license": "TLB", "days_left": days_left})
+                
+            if vehicle.get("inspection_expiry") and today <= datetime.fromisoformat(vehicle["inspection_expiry"].replace('Z', '+00:00')).date() <= (today + timedelta(days=10)):
+                days_left = (datetime.fromisoformat(vehicle["inspection_expiry"].replace('Z', '+00:00')).date() - today).days
+                expiring_licenses.append({"license": "Inspection", "days_left": days_left})
+                
+            if vehicle.get("speed_governor_expiry") and today <= datetime.fromisoformat(vehicle["speed_governor_expiry"].replace('Z', '+00:00')).date() <= (today + timedelta(days=10)):
+                days_left = (datetime.fromisoformat(vehicle["speed_governor_expiry"].replace('Z', '+00:00')).date() - today).days
+                expiring_licenses.append({"license": "Speed Governor", "days_left": days_left})
+            
+            if expiring_licenses:
+                renewals.append({
+                    "vehicle_name": vehicle.get("reg_no", f"Vehicle {vehicle.get('id')}"),
+                    "expiring_licenses": expiring_licenses
+                })
         
         # 4. Average Collection Per Vehicle
         # First, get all active vehicles
@@ -131,6 +171,7 @@ async def get_financial_overview(current_user = Depends(get_current_active_user)
             "active_vehicles_count": active_vehicles_count,
             "total_vehicles_count": total_vehicles_count,
             "upcoming_renewals": upcoming_renewals,
+            "renewals": renewals,
             "avg_collection_per_vehicle": avg_collection_per_vehicle,
             "revenue_comparison": revenue_comparison,
             "vehicle_utilization": vehicle_utilization,
