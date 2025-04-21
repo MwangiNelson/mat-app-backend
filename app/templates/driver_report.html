@@ -119,13 +119,13 @@
         <tr>
             <th>Total Trips</th>
             <th>Total Collections</th>
-            <th>Collection Efficiency</th>
+            <!-- <th>Collection Efficiency</th> -->
             <th>Avg Collection Per Trip</th>
         </tr>
         <tr>
             <td>{{ driver.trip_count|default(0) }}</td>
             <td>KES {{ "%.2f"|format(driver.total_collections|default(0)) }}</td>
-            <td>{{ "%.1f"|format(driver.collection_efficiency|default(0)) }}%</td>
+            <!-- <td>{{ "%.1f"|format(driver.collection_efficiency|default(0)) }}%</td> -->
             <td>KES {{ "%.2f"|format(driver.avg_per_trip|default(0)) }}</td>
         </tr>
     </table>
