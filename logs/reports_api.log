@@ -243,3 +243,140 @@ TypeError: fetch_trip_data() got an unexpected keyword argument 'driver_id'
 2025-04-20 21:44:32,522 - app.api.reports - INFO - Reports API logger initialized
 2025-04-20 23:05:37,796 - app.api.reports - INFO - Reports API logger initialized
 2025-04-20 23:05:40,338 - app.api.reports - INFO - Reports API logger initialized
+2025-04-21 20:10:08,713 - app.api.reports - INFO - Reports API logger initialized
+2025-04-21 20:10:16,679 - app.api.reports - INFO - Reports API logger initialized
+2025-04-21 20:11:44,477 - app.api.reports - INFO - Fetching trip data from 2025-03-22 to 2025-04-21
+2025-04-21 20:11:44,478 - app.api.reports - DEBUG - Vehicle IDs: 5e9da98b-663b-4f20-9b14-be79b3c374fd, Driver IDs: None
+2025-04-21 20:11:44,803 - app.api.reports - INFO - Found 0 trips
+2025-04-21 20:11:44,804 - app.api.reports - INFO - Enriching 0 trips with additional data
+2025-04-21 20:11:44,805 - app.api.reports - INFO - Successfully enriched 0 trips
+2025-04-21 20:11:44,806 - app.api.reports - INFO - Processing daily performance for 0 trips
+2025-04-21 20:11:44,806 - app.api.reports - INFO - Processed 0 daily performance records
+2025-04-21 20:11:44,807 - app.api.reports - INFO - Starting PDF rendering for template: vehicle_report.html
+2025-04-21 20:11:44,875 - app.api.reports - DEBUG - Rendering template with context keys: ['vehicle', 'trips', 'daily_data', 'vehicle_drivers', 'vehicle_routes', 'start_date', 'end_date', 'report_date']
+2025-04-21 20:11:44,876 - app.api.reports - DEBUG - Converting HTML to PDF
+2025-04-21 20:11:45,030 - app.api.reports - INFO - PDF rendering completed successfully
+2025-04-21 20:21:54,364 - app.api.reports - INFO - Fetching trip data from 2025-04-01 to 2025-04-21
+2025-04-21 20:21:54,365 - app.api.reports - DEBUG - Vehicle IDs: ['814c24a5-2d4d-420b-89be-cefc8f46de81', '5f5eac32-6d6c-404c-ac4b-0c6577051d1f', '5e9da98b-663b-4f20-9b14-be79b3c374fd', 'f8f73f3b-83f9-493a-90c1-608316036ec2'], Driver IDs: ['a2f29353-49c6-40ed-a9ec-8f04ba0b3acc']
+2025-04-21 20:21:54,672 - app.api.reports - INFO - Found 3 trips
+2025-04-21 20:21:54,673 - app.api.reports - INFO - Enriching 3 trips with additional data
+2025-04-21 20:21:57,257 - app.api.reports - INFO - Successfully enriched 3 trips
+2025-04-21 20:21:57,257 - app.api.reports - INFO - Processing daily performance for 3 trips
+2025-04-21 20:21:57,258 - app.api.reports - INFO - Processed 3 daily performance records
+2025-04-21 20:21:57,259 - app.api.reports - INFO - Starting PDF rendering for template: combined_report.html
+2025-04-21 20:21:57,344 - app.api.reports - DEBUG - Rendering template with context keys: ['summary', 'vehicles', 'drivers', 'daily_data', 'trips', 'start_date', 'end_date', 'report_date']
+2025-04-21 20:21:57,345 - app.api.reports - DEBUG - Converting HTML to PDF
+2025-04-21 20:21:57,657 - app.api.reports - INFO - PDF rendering completed successfully
+2025-04-21 20:22:54,092 - app.api.reports - INFO - Fetching trip data from 2025-04-01 to 2025-04-21
+2025-04-21 20:22:54,092 - app.api.reports - DEBUG - Vehicle IDs: None, Driver IDs: ['a2f29353-49c6-40ed-a9ec-8f04ba0b3acc', 'f2401712-b952-4c5d-a336-da25ecd50043']
+2025-04-21 20:22:54,421 - app.api.reports - INFO - Found 7 trips
+2025-04-21 20:22:54,421 - app.api.reports - INFO - Enriching 7 trips with additional data
+2025-04-21 20:23:00,239 - app.api.reports - INFO - Successfully enriched 7 trips
+2025-04-21 20:23:00,240 - app.api.reports - INFO - Processing daily performance for 7 trips
+2025-04-21 20:23:00,240 - app.api.reports - INFO - Processed 5 daily performance records
+2025-04-21 20:23:00,241 - app.api.reports - INFO - Starting PDF rendering for template: combined_report.html
+2025-04-21 20:23:00,241 - app.api.reports - DEBUG - Rendering template with context keys: ['summary', 'vehicles', 'drivers', 'daily_data', 'trips', 'start_date', 'end_date', 'report_date']
+2025-04-21 20:23:00,242 - app.api.reports - DEBUG - Converting HTML to PDF
+2025-04-21 20:23:00,450 - app.api.reports - INFO - PDF rendering completed successfully
+2025-04-21 20:24:25,641 - app.api.reports - INFO - Fetching trip data from 2025-04-01 to 2025-04-21
+2025-04-21 20:24:25,642 - app.api.reports - DEBUG - Vehicle IDs: ['5f5eac32-6d6c-404c-ac4b-0c6577051d1f', '814c24a5-2d4d-420b-89be-cefc8f46de81'], Driver IDs: ['f2401712-b952-4c5d-a336-da25ecd50043', 'a2f29353-49c6-40ed-a9ec-8f04ba0b3acc']
+2025-04-21 20:24:26,048 - app.api.reports - INFO - Found 7 trips
+2025-04-21 20:24:26,049 - app.api.reports - INFO - Enriching 7 trips with additional data
+2025-04-21 20:24:33,133 - app.api.reports - INFO - Successfully enriched 7 trips
+2025-04-21 20:24:33,134 - app.api.reports - INFO - Processing daily performance for 7 trips
+2025-04-21 20:24:33,134 - app.api.reports - INFO - Processed 5 daily performance records
+2025-04-21 20:24:33,135 - app.api.reports - INFO - Starting PDF rendering for template: combined_report.html
+2025-04-21 20:24:33,136 - app.api.reports - DEBUG - Rendering template with context keys: ['summary', 'vehicles', 'drivers', 'daily_data', 'trips', 'start_date', 'end_date', 'report_date']
+2025-04-21 20:24:33,136 - app.api.reports - DEBUG - Converting HTML to PDF
+2025-04-21 20:24:33,390 - app.api.reports - INFO - PDF rendering completed successfully
+2025-04-21 20:31:09,099 - app.api.reports - INFO - Fetching trip data from 2025-04-01 to 2025-04-21
+2025-04-21 20:31:09,100 - app.api.reports - DEBUG - Vehicle IDs: ['5e9da98b-663b-4f20-9b14-be79b3c374fd', '814c24a5-2d4d-420b-89be-cefc8f46de81', '5f5eac32-6d6c-404c-ac4b-0c6577051d1f'], Driver IDs: ['f2401712-b952-4c5d-a336-da25ecd50043', 'a2f29353-49c6-40ed-a9ec-8f04ba0b3acc']
+2025-04-21 20:31:09,505 - app.api.reports - INFO - Found 7 trips
+2025-04-21 20:31:09,506 - app.api.reports - INFO - Enriching 7 trips with additional data
+2025-04-21 20:31:16,491 - app.api.reports - INFO - Successfully enriched 7 trips
+2025-04-21 20:31:16,492 - app.api.reports - INFO - Processing daily performance for 7 trips
+2025-04-21 20:31:16,492 - app.api.reports - INFO - Processed 5 daily performance records
+2025-04-21 20:31:16,493 - app.api.reports - INFO - Starting PDF rendering for template: combined_report.html
+2025-04-21 20:31:16,493 - app.api.reports - DEBUG - Rendering template with context keys: ['summary', 'vehicles', 'drivers', 'daily_data', 'trips', 'start_date', 'end_date', 'report_date']
+2025-04-21 20:31:16,494 - app.api.reports - DEBUG - Converting HTML to PDF
+2025-04-21 20:31:16,766 - app.api.reports - INFO - PDF rendering completed successfully
+2025-04-21 21:11:25,252 - app.api.reports - INFO - Fetching trip data from 2025-03-22 to 2025-04-21
+2025-04-21 21:11:25,253 - app.api.reports - DEBUG - Vehicle IDs: ['814c24a5-2d4d-420b-89be-cefc8f46de81'], Driver IDs: None
+2025-04-21 21:11:25,936 - app.api.reports - INFO - Found 1 trips
+2025-04-21 21:11:25,937 - app.api.reports - INFO - Enriching 1 trips with additional data
+2025-04-21 21:11:26,767 - app.api.reports - INFO - Successfully enriched 1 trips
+2025-04-21 21:11:26,767 - app.api.reports - INFO - Processing daily performance for 1 trips
+2025-04-21 21:11:26,768 - app.api.reports - INFO - Processed 1 daily performance records
+2025-04-21 21:11:26,769 - app.api.reports - INFO - Starting PDF rendering for template: combined_report.html
+2025-04-21 21:11:26,769 - app.api.reports - DEBUG - Rendering template with context keys: ['summary', 'vehicles', 'drivers', 'daily_data', 'trips', 'start_date', 'end_date', 'report_date']
+2025-04-21 21:11:26,771 - app.api.reports - DEBUG - Converting HTML to PDF
+2025-04-21 21:11:26,908 - app.api.reports - INFO - PDF rendering completed successfully
+2025-04-21 21:17:59,789 - app.api.reports - INFO - Reports API logger initialized
+2025-04-21 21:20:30,493 - app.api.reports - INFO - Reports API logger initialized
+2025-04-21 21:20:49,645 - app.api.reports - INFO - Fetching trip data from 2025-03-22 to 2025-04-21
+2025-04-21 21:20:49,646 - app.api.reports - DEBUG - Vehicle IDs: ['814c24a5-2d4d-420b-89be-cefc8f46de81'], Driver IDs: None
+2025-04-21 21:20:49,964 - app.api.reports - INFO - Found 2 trips
+2025-04-21 21:20:49,965 - app.api.reports - INFO - Enriching 2 trips with additional data
+2025-04-21 21:20:51,413 - app.api.reports - INFO - Successfully enriched 2 trips
+2025-04-21 21:20:51,413 - app.api.reports - INFO - Processing daily performance for 2 trips
+2025-04-21 21:20:51,414 - app.api.reports - INFO - Processed 2 daily performance records
+2025-04-21 21:20:51,414 - app.api.reports - INFO - Starting PDF rendering for template: combined_report.html
+2025-04-21 21:20:51,450 - app.api.reports - DEBUG - Rendering template with context keys: ['summary', 'vehicles', 'drivers', 'daily_data', 'trips', 'start_date', 'end_date', 'report_date']
+2025-04-21 21:20:51,451 - app.api.reports - DEBUG - Converting HTML to PDF
+2025-04-21 21:20:51,600 - app.api.reports - INFO - PDF rendering completed successfully
+2025-04-21 21:21:23,189 - app.api.reports - INFO - Fetching trip data from 2025-03-22 to 2025-04-21
+2025-04-21 21:21:23,190 - app.api.reports - DEBUG - Vehicle IDs: ['814c24a5-2d4d-420b-89be-cefc8f46de81', 'f8f73f3b-83f9-493a-90c1-608316036ec2', '5f5eac32-6d6c-404c-ac4b-0c6577051d1f'], Driver IDs: ['f2401712-b952-4c5d-a336-da25ecd50043']
+2025-04-21 21:21:23,515 - app.api.reports - INFO - Found 5 trips
+2025-04-21 21:21:23,516 - app.api.reports - INFO - Enriching 5 trips with additional data
+2025-04-21 21:21:27,129 - app.api.reports - INFO - Successfully enriched 5 trips
+2025-04-21 21:21:27,130 - app.api.reports - INFO - Processing daily performance for 5 trips
+2025-04-21 21:21:27,130 - app.api.reports - INFO - Processed 4 daily performance records
+2025-04-21 21:21:27,131 - app.api.reports - INFO - Starting PDF rendering for template: combined_report.html
+2025-04-21 21:21:27,131 - app.api.reports - DEBUG - Rendering template with context keys: ['summary', 'vehicles', 'drivers', 'daily_data', 'trips', 'start_date', 'end_date', 'report_date']
+2025-04-21 21:21:27,132 - app.api.reports - DEBUG - Converting HTML to PDF
+2025-04-21 21:21:27,382 - app.api.reports - INFO - PDF rendering completed successfully
+2025-04-21 21:32:06,645 - app.api.reports - INFO - Fetching trip data from 2025-03-22 to 2025-04-21
+2025-04-21 21:32:06,647 - app.api.reports - DEBUG - Vehicle IDs: ['814c24a5-2d4d-420b-89be-cefc8f46de81', 'f8f73f3b-83f9-493a-90c1-608316036ec2', '5f5eac32-6d6c-404c-ac4b-0c6577051d1f'], Driver IDs: ['f2401712-b952-4c5d-a336-da25ecd50043']
+2025-04-21 21:32:07,331 - app.api.reports - INFO - Found 5 trips
+2025-04-21 21:32:07,332 - app.api.reports - INFO - Enriching 5 trips with additional data
+2025-04-21 21:32:13,920 - app.api.reports - INFO - Successfully enriched 5 trips
+2025-04-21 21:32:13,921 - app.api.reports - INFO - Processing daily performance for 5 trips
+2025-04-21 21:32:13,921 - app.api.reports - INFO - Processed 4 daily performance records
+2025-04-21 21:32:13,922 - app.api.reports - INFO - Starting PDF rendering for template: combined_report.html
+2025-04-21 21:32:13,938 - app.api.reports - DEBUG - Rendering template with context keys: ['summary', 'vehicles', 'drivers', 'daily_data', 'trips', 'start_date', 'end_date', 'report_date']
+2025-04-21 21:32:13,939 - app.api.reports - DEBUG - Converting HTML to PDF
+2025-04-21 21:32:14,093 - app.api.reports - INFO - PDF rendering completed successfully
+2025-04-21 21:32:56,119 - app.api.reports - INFO - Generating driver report for driver_id=f2401712-b952-4c5d-a336-da25ecd50043, format=pdf
+2025-04-21 21:32:56,119 - app.api.reports - INFO - Using provided start_date: 2025-03-05
+2025-04-21 21:32:56,120 - app.api.reports - INFO - Using provided end_date: 2025-04-21
+2025-04-21 21:32:56,121 - app.api.reports - INFO - Checking if driver with ID f2401712-b952-4c5d-a336-da25ecd50043 exists
+2025-04-21 21:32:56,602 - app.api.reports - INFO - Found driver: Hugh Jackman
+2025-04-21 21:32:56,603 - app.api.reports - INFO - Fetching trip data for driver from 2025-03-05 to 2025-04-21
+2025-04-21 21:32:56,604 - app.api.reports - INFO - Fetching trip data from 2025-03-05 to 2025-04-21
+2025-04-21 21:32:56,605 - app.api.reports - DEBUG - Vehicle IDs: None, Driver IDs: f2401712-b952-4c5d-a336-da25ecd50043
+2025-04-21 21:32:56,945 - app.api.reports - INFO - Found 5 trips
+2025-04-21 21:32:56,946 - app.api.reports - INFO - Found 5 trips for driver
+2025-04-21 21:32:56,947 - app.api.reports - INFO - Enriching 5 trips with additional data
+2025-04-21 21:33:00,923 - app.api.reports - INFO - Successfully enriched 5 trips
+2025-04-21 21:33:00,924 - app.api.reports - INFO - Processing driver performance metrics
+2025-04-21 21:33:00,925 - app.api.reports - INFO - Driver metrics calculated: trips=5, collections=40000.0, expenses=1000.0
+2025-04-21 21:33:00,926 - app.api.reports - INFO - Processing daily performance for 5 trips
+2025-04-21 21:33:00,927 - app.api.reports - INFO - Processed 4 daily performance records
+2025-04-21 21:33:00,927 - app.api.reports - DEBUG - Report context prepared with keys: ['driver', 'trips', 'daily_data', 'start_date', 'end_date', 'report_date']
+2025-04-21 21:33:00,928 - app.api.reports - INFO - Rendering PDF report
+2025-04-21 21:33:00,929 - app.api.reports - INFO - Starting PDF rendering for template: driver_report.html
+2025-04-21 21:33:00,940 - app.api.reports - DEBUG - Rendering template with context keys: ['driver', 'trips', 'daily_data', 'start_date', 'end_date', 'report_date']
+2025-04-21 21:33:00,941 - app.api.reports - DEBUG - Converting HTML to PDF
+2025-04-21 21:33:01,017 - app.api.reports - INFO - PDF rendering completed successfully
+2025-04-21 21:33:01,018 - app.api.reports - INFO - PDF report generated, filename: Hugh_Jackman_20250305_report.pdf
+2025-04-21 21:33:31,787 - app.api.reports - INFO - Fetching trip data from 2025-03-22 to 2025-04-21
+2025-04-21 21:33:31,788 - app.api.reports - DEBUG - Vehicle IDs: 5f5eac32-6d6c-404c-ac4b-0c6577051d1f, Driver IDs: None
+2025-04-21 21:33:32,444 - app.api.reports - INFO - Found 6 trips
+2025-04-21 21:33:32,444 - app.api.reports - INFO - Enriching 6 trips with additional data
+2025-04-21 21:33:38,302 - app.api.reports - INFO - Successfully enriched 6 trips
+2025-04-21 21:33:38,302 - app.api.reports - INFO - Processing daily performance for 6 trips
+2025-04-21 21:33:38,303 - app.api.reports - INFO - Processed 4 daily performance records
+2025-04-21 21:33:38,304 - app.api.reports - INFO - Starting PDF rendering for template: vehicle_report.html
+2025-04-21 21:33:38,324 - app.api.reports - DEBUG - Rendering template with context keys: ['vehicle', 'trips', 'daily_data', 'vehicle_drivers', 'vehicle_routes', 'start_date', 'end_date', 'report_date']
+2025-04-21 21:33:38,325 - app.api.reports - DEBUG - Converting HTML to PDF
+2025-04-21 21:33:38,446 - app.api.reports - INFO - PDF rendering completed successfully

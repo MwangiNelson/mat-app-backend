@@ -150,14 +150,12 @@
             <th>Active Days</th>
             <th>Total Days</th>
             <th>Utilization Rate</th>
-            <th>Fuel Expense</th>
-            <th>Repair Expense</th>
+            <th>Management Expense</th>
         </tr>
         <tr>
             <td>{{ summary.active_days|default(0) }}</td>
             <td>{{ summary.total_days|default(0) }}</td>
             <td>{{ "%.1f"|format(summary.utilization_rate|default(0)) }}%</td>
-            <td class="expense">KES {{ "%.2f"|format(summary.fuel_expense|default(0)) }}</td>
             <td class="expense">KES {{ "%.2f"|format(summary.repair_expense|default(0)) }}</td>
         </tr>
     </table>
@@ -169,13 +167,9 @@
             <th>Amount</th>
             <th>Percentage</th>
         </tr>
+      
         <tr>
-            <td>Fuel</td>
-            <td>KES {{ "%.2f"|format(summary.fuel_expense|default(0)) }}</td>
-            <td>{{ "%.1f"|format(summary.fuel_expense|default(0) / summary.total_expenses|default(0) * 100 if summary.total_expenses|default(0) > 0 else 0) }}%</td>
-        </tr>
-        <tr>
-            <td>Repairs</td>
+            <td>Management Costs</td>
             <td>KES {{ "%.2f"|format(summary.repair_expense|default(0)) }}</td>
             <td>{{ "%.1f"|format(summary.repair_expense|default(0) / summary.total_expenses|default(0) * 100 if summary.total_expenses|default(0) > 0 else 0) }}%</td>
         </tr>

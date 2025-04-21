@@ -144,14 +144,12 @@
     <table class="metrics-table">
         <tr>
             <th>Total Trips</th>
-            <th>Utilization Rate</th>
-            <th>Fuel Expense</th>
+            
             <th>Repair Expense</th>
         </tr>
         <tr>
             <td>{{ vehicle.trip_count|default(0) }}</td>
-            <td>{{ "%.1f"|format(vehicle.utilization_rate|default(0)) }}%</td>
-            <td class="expense">KES {{ "%.2f"|format(vehicle.fuel_expense|default(0)) }}</td>
+            
             <td class="expense">KES {{ "%.2f"|format(vehicle.repair_expense|default(0)) }}</td>
         </tr>
     </table>
@@ -163,15 +161,11 @@
             <th>Amount</th>
             <th>Percentage</th>
         </tr>
+    
         <tr>
-            <td>Fuel</td>
-            <td>KES {{ "%.2f"|format(vehicle.fuel_expense|default(0)) }}</td>
-            <td>{{ "%.1f"|format(vehicle.fuel_expense|default(0) / vehicle.total_expenses|default(0) * 100 if vehicle.total_expenses|default(0) > 0 else 0) }}%</td>
-        </tr>
-        <tr>
-            <td>Repairs</td>
-            <td>KES {{ "%.2f"|format(vehicle.repair_expense|default(0)) }}</td>
-            <td>{{ "%.1f"|format(vehicle.repair_expense|default(0) / vehicle.total_expenses|default(0) * 100 if vehicle.total_expenses|default(0) > 0 else 0) }}%</td>
+            <td>Management Expense</td>
+            <td>KES {{ "%.2f"|format(vehicle.management_expense|default(0)) }}</td>
+            <td>{{ "%.1f"|format(vehicle.management_expense|default(0) / vehicle.total_expenses|default(0) * 100 if vehicle.total_expenses|default(0) > 0 else 0) }}%</td>
         </tr>
         <tr>
             <td>Other</td>

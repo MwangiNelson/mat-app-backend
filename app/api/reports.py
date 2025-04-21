@@ -109,7 +109,12 @@ def fetch_trip_data(start_date, end_date, vehicle_ids=None, driver_ids=None):
         logger.info(f"Fetching trip data from {start_date} to {end_date}")
         logger.debug(f"Vehicle IDs: {vehicle_ids}, Driver IDs: {driver_ids}")
         
-        query = supabase.table("trips").select("*").gte("collection_time", start_date.isoformat()).lte("collection_time", end_date.isoformat())
+        # Create start_datetime with time at 00:00:00
+        start_datetime = datetime.combine(start_date, datetime.min.time())
+        # Create end_datetime with time at 23:59:59
+        end_datetime = datetime.combine(end_date, datetime.max.time())
+        
+        query = supabase.table("trips").select("*").gte("collection_time", start_datetime.isoformat()).lte("collection_time", end_datetime.isoformat())
         
         if vehicle_ids:
             if isinstance(vehicle_ids, list):
