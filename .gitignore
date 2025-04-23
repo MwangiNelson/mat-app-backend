@@ -2,5 +2,10 @@
 /supabase_functions.sql
 /supabase_schema.sql
 /venv
+/__pycache__
+/logs
+/logs/*
 *.bat
 *.sql
+*.pyc
+*.vbs

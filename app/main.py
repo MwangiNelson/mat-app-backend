@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
@@ -101,11 +101,59 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     """Handle validation errors with detailed feedback"""
     errors = []
+    user_friendly_message = "Validation error"
+    
+    # Common error mappings for user-friendly messages
+    error_type_messages = {
+        "string_too_short": "is too short",
+        "value_error.email": "is not a valid email address",
+        "value_error.missing": "is required",
+        "type_error": "has an invalid type",
+        "value_error.extra": "field is not allowed",
+        "value_error.any_str.min_length": "is too short"
+    }
+    
+    # Field-specific error messages
+    field_specific_messages = {
+        "password": {
+            "string_too_short": "Password must be at least 8 characters long",
+            "value_error.any_str.min_length": "Password must be at least 8 characters long"
+        },
+        "email": {
+            "value_error.email": "Please enter a valid email address"
+        }
+    }
+    
     for error in exc.errors():
+        error_type = error["type"]
+        
+        # Extract field name from location
+        field = None
+        if error.get("loc") and len(error["loc"]) > 1:
+            field = error["loc"][1]  # The field is usually the second item in loc
+            
+        # Check for field-specific error messages
+        if field and field in field_specific_messages and error_type in field_specific_messages[field]:
+            error_message = field_specific_messages[field][error_type]
+            # If this is the first error, use it as the main message
+            if not errors:
+                user_friendly_message = error_message
+        else:
+            # Use generic message based on error type
+            type_message = error_type_messages.get(error_type, "is invalid")
+            if field:
+                error_message = f"{field.capitalize()} {type_message}"
+            else:
+                error_message = error["msg"]
+                
+            # If this is the first error, use it as the main message
+            if not errors and field:
+                user_friendly_message = error_message
+        
         error_obj = {
-            "type": error["type"],
+            "type": error_type,
             "field": ".".join(str(loc) for loc in error["loc"]) if error["loc"] else None,
-            "message": error["msg"]
+            "message": error_message if 'error_message' in locals() else error["msg"]
         }
         errors.append(error_obj)
     
@@ -114,7 +162,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         content=ErrorResponse(
             status="error",
             code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            message="Validation error",
+            message=user_friendly_message,
             details={"path": request.url.path},
             errors=errors
         ).dict()

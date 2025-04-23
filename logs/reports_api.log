@@ -380,3 +380,14 @@ TypeError: fetch_trip_data() got an unexpected keyword argument 'driver_id'
 2025-04-21 21:33:38,324 - app.api.reports - DEBUG - Rendering template with context keys: ['vehicle', 'trips', 'daily_data', 'vehicle_drivers', 'vehicle_routes', 'start_date', 'end_date', 'report_date']
 2025-04-21 21:33:38,325 - app.api.reports - DEBUG - Converting HTML to PDF
 2025-04-21 21:33:38,446 - app.api.reports - INFO - PDF rendering completed successfully
+2025-04-22 10:26:38,937 - app.api.reports - INFO - Reports API logger initialized
+2025-04-22 10:43:46,184 - app.api.reports - INFO - Reports API logger initialized
+2025-04-23 09:01:43,315 - app.api.reports - INFO - Reports API logger initialized
+2025-04-23 14:15:04,177 - app.api.reports - INFO - Reports API logger initialized
+2025-04-23 14:53:23,020 - app.api.reports - INFO - Reports API logger initialized
+2025-04-23 16:14:07,893 - app.api.reports - INFO - Reports API logger initialized
+2025-04-23 17:13:07,948 - app.api.reports - INFO - Reports API logger initialized
+2025-04-23 17:16:47,858 - app.api.reports - INFO - Reports API logger initialized
+2025-04-23 17:17:18,813 - app.api.reports - INFO - Reports API logger initialized
+2025-04-23 17:17:40,063 - app.api.reports - INFO - Reports API logger initialized
+2025-04-23 17:17:42,327 - app.api.reports - INFO - Reports API logger initialized
