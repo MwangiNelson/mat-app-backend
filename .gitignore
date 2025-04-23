@@ -9,3 +9,5 @@
 *.sql
 *.pyc
 *.vbs
+*/_pycache_/*
+*/logs/*

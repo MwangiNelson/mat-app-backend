@@ -128,12 +128,15 @@ async def delete_driver(
     # Check if driver has operations
     operations = supabase.table("operations").select("id").eq("driver_id", driver_id).limit(1).execute()
     
-    if operations.data:
+    # Check if driver has deficits
+    deficits = supabase.table("deficits").select("id").eq("driver", driver_id).limit(1).execute()
+    
+    if operations.data or deficits.data:
         # Instead of deleting, mark as inactive
         response = supabase.table("drivers").update({"status": "inactive"}).eq("id", driver_id).execute()
-        return {"message": "Driver marked as inactive (has operations)"}
+        return {"message": "Driver marked as inactive (has related records)"}
     
-    # If no operations, delete the driver
+    # If no operations or deficits, delete the driver
     response = supabase.table("drivers").delete().eq("id", driver_id).execute()
     
     return {"message": "Driver deleted successfully"}
