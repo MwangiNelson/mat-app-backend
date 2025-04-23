@@ -26,7 +26,7 @@ class DriverUpdate(BaseModel):
     experience: Optional[str] = None
     rating: Optional[float] = Field(default=None, ge=0.0, le=5.0)
     photo_url: Optional[str] = None
-
+    license_no: Optional[str] = None
 class DriverInDB(DriverBase):
     id: str
     created_at: datetime

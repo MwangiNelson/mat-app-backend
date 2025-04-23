@@ -25,6 +25,8 @@ class DriverUpdate(BaseModel):
     experience: Optional[str] = None
     rating: Optional[float] = None
     photo_url: Optional[str] = None
+    license_no: Optional[str] = None
+
 
 class DriverInDB(DriverBase):
     id: str
