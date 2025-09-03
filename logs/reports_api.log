@@ -401,3 +401,47 @@ TypeError: fetch_trip_data() got an unexpected keyword argument 'driver_id'
 2025-04-23 18:59:53,536 - app.api.reports - INFO - Reports API logger initialized
 2025-04-23 19:06:19,813 - app.api.reports - INFO - Reports API logger initialized
 2025-04-23 19:06:35,197 - app.api.reports - INFO - Reports API logger initialized
+2025-04-26 11:04:53,616 - app.api.reports - INFO - Reports API logger initialized
+2025-04-26 11:06:05,490 - app.api.reports - INFO - Fetching trip data from 2025-03-27 to 2025-04-26
+2025-04-26 11:06:05,491 - app.api.reports - DEBUG - Vehicle IDs: 99f8eb4b-7d79-4281-a2fa-33c72ac13076, Driver IDs: None
+2025-04-26 11:06:05,822 - app.api.reports - INFO - Found 0 trips
+2025-04-26 11:06:05,823 - app.api.reports - INFO - Enriching 0 trips with additional data
+2025-04-26 11:06:05,823 - app.api.reports - INFO - Successfully enriched 0 trips
+2025-04-26 11:06:05,824 - app.api.reports - INFO - Processing daily performance for 0 trips
+2025-04-26 11:06:05,825 - app.api.reports - INFO - Processed 0 daily performance records
+2025-04-26 11:06:05,826 - app.api.reports - INFO - Starting PDF rendering for template: vehicle_report.html
+2025-04-26 11:06:05,887 - app.api.reports - DEBUG - Rendering template with context keys: ['vehicle', 'trips', 'daily_data', 'vehicle_drivers', 'vehicle_routes', 'start_date', 'end_date', 'report_date']
+2025-04-26 11:06:05,889 - app.api.reports - DEBUG - Converting HTML to PDF
+2025-04-26 11:06:06,017 - app.api.reports - INFO - PDF rendering completed successfully
+2025-08-21 16:16:41,830 - app.api.reports - INFO - Reports API logger initialized
+2025-08-21 16:26:35,907 - app.api.reports - INFO - Fetching trip data from 2025-07-22 to 2025-08-21
+2025-08-21 16:26:35,908 - app.api.reports - DEBUG - Vehicle IDs: 99f8eb4b-7d79-4281-a2fa-33c72ac13076, Driver IDs: None
+2025-08-21 16:26:36,270 - app.api.reports - INFO - Found 13 trips
+2025-08-21 16:26:36,270 - app.api.reports - INFO - Enriching 13 trips with additional data
+2025-08-21 16:26:45,785 - app.api.reports - INFO - Successfully enriched 13 trips
+2025-08-21 16:26:45,786 - app.api.reports - INFO - Processing daily performance for 13 trips
+2025-08-21 16:26:45,786 - app.api.reports - INFO - Processed 12 daily performance records
+2025-08-21 16:26:45,787 - app.api.reports - INFO - Starting PDF rendering for template: vehicle_report.html
+2025-08-21 16:26:45,824 - app.api.reports - DEBUG - Rendering template with context keys: ['vehicle', 'trips', 'daily_data', 'vehicle_drivers', 'vehicle_routes', 'start_date', 'end_date', 'report_date']
+2025-08-21 16:26:45,825 - app.api.reports - DEBUG - Converting HTML to PDF
+2025-08-21 16:26:45,988 - app.api.reports - INFO - PDF rendering completed successfully
+2025-09-02 22:36:37,649 - app.api.reports - INFO - Reports API logger initialized
+2025-09-02 23:48:21,335 - app.api.reports - INFO - Reports API logger initialized
+2025-09-02 23:56:12,490 - app.api.reports - INFO - Reports API logger initialized
+2025-09-03 00:00:16,658 - app.api.reports - INFO - Reports API logger initialized
+2025-09-03 00:00:35,326 - app.api.reports - INFO - Reports API logger initialized
+2025-09-03 00:01:54,610 - app.api.reports - INFO - Reports API logger initialized
+2025-09-03 00:02:00,012 - app.api.reports - INFO - Reports API logger initialized
+2025-09-03 00:02:03,863 - app.api.reports - INFO - Reports API logger initialized
+2025-09-03 00:02:15,409 - app.api.reports - INFO - Reports API logger initialized
+2025-09-03 00:04:27,479 - app.api.reports - INFO - Reports API logger initialized
+2025-09-03 00:11:22,879 - app.api.reports - INFO - Reports API logger initialized
+2025-09-03 10:02:15,183 - app.api.reports - INFO - Reports API logger initialized
+2025-09-03 10:02:19,135 - app.api.reports - INFO - Reports API logger initialized
+2025-09-03 10:02:37,786 - app.api.reports - INFO - Reports API logger initialized
+2025-09-03 10:02:42,662 - app.api.reports - INFO - Reports API logger initialized
+2025-09-03 10:02:49,208 - app.api.reports - INFO - Reports API logger initialized
+2025-09-03 10:02:54,004 - app.api.reports - INFO - Reports API logger initialized
+2025-09-03 10:03:34,072 - app.api.reports - INFO - Reports API logger initialized
+2025-09-03 10:03:52,309 - app.api.reports - INFO - Reports API logger initialized
+2025-09-03 10:07:14,209 - app.api.reports - INFO - Reports API logger initialized

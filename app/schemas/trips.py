@@ -1,7 +1,9 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional, List, Dict, Any, Union, Generic, TypeVar
 from datetime import datetime
 from enum import Enum
+
+T = TypeVar('T')
 
 class TripStatus(str, Enum):
     IN_PROGRESS = "in_progress"
@@ -11,7 +13,7 @@ class TripStatus(str, Enum):
 class TripBase(BaseModel):
     vehicle_id: str
     driver_id: str
-    collection_time: datetime
+    collection_time: datetime  # Keep collection_time for API compatibility
     route: Optional[str] = None
     notes: Optional[str] = None
     collected_amount: Optional[int] = 0
@@ -23,7 +25,7 @@ class TripBase(BaseModel):
 class TripCreate(BaseModel):
     vehicle_id: str
     driver_id: str
-    collection_time: datetime
+    collection_time: datetime  # Keep collection_time for API compatibility
     route: Optional[str] = None
     notes: Optional[str] = None
     created_by: str
@@ -54,4 +56,16 @@ class TripDetail(TripResponse):
     destination: Optional[str] = None
     fare_amount: Optional[float] = None
     collection_date: Optional[str] = None
-    collection_time_only: Optional[str] = None 
+    collection_time_only: Optional[str] = None
+
+class PaginationMeta(BaseModel):
+    page: int
+    per_page: int
+    total: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    data: List[T]
+    meta: PaginationMeta 

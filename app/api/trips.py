@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import List, Any, Optional
-from datetime import datetime, date
+import math
+from datetime import datetime, date, timedelta
 
 from app.core.db import supabase
 from app.core.security import get_current_active_user, check_admin_role
-from app.schemas.trips import TripCreate, TripUpdate, TripResponse, TripDetail
+from app.schemas.trips import TripCreate, TripUpdate, TripResponse, TripDetail, PaginatedResponse
 from app.core.utils import DateTimeEncoder, serialize_datetime
 import json
 
@@ -66,6 +67,7 @@ async def create_trip(trip_data: TripCreate, current_user = Depends(get_current_
         # Create trip with calculated expected amount
         trip_dict = trip_data.dict()
         
+        # collection_time is already compatible with the database schema
         
         # Serialize datetime objects for database
         trip_dict = serialize_for_db(trip_dict)
@@ -97,21 +99,62 @@ async def create_trip(trip_data: TripCreate, current_user = Depends(get_current_
             detail=f"Error creating trip: {str(e)}"
         )
 
-@router.get("/", response_model=List[TripDetail])
+@router.get("/", response_model=PaginatedResponse[TripDetail])
 async def get_trips(
     vehicle_id: Optional[str] = None,
     driver_id: Optional[str] = None,
     route: Optional[str] = None,
-    status: Optional[str] = None,
+    trip_status: Optional[str] = None,
     date: Optional[date] = None,
+    page: int = Query(1, ge=1, description="Page number"),
+    per_page: int = Query(20, ge=1, le=100, description="Items per page"),
     current_user = Depends(get_current_active_user)
 ) -> Any:
     """
-    Get all trips, with optional filtering.
+    Get all trips, with optional filtering and pagination.
     """
     try:
-        query = supabase.table("trips").select("*")
+        # Use optimized query with joins to fetch trips with related data in one query
+        # Build the select statement with joins
+        select_query = """
+            *,
+            vehicles!inner(reg_no),
+            drivers!inner(name)
+        """
         
+        # Build base query for counting total records with joins
+        count_query = supabase.table("trips").select("*", count="exact")
+        
+        # Apply filters to count query
+        if vehicle_id:
+            count_query = count_query.eq("vehicle_id", vehicle_id)
+        
+        if driver_id:
+            count_query = count_query.eq("driver_id", driver_id)
+        
+        if route:
+            count_query = count_query.eq("route", route)
+        
+        if trip_status:
+            count_query = count_query.eq("status", trip_status)
+        
+        if date:
+            count_query = count_query.gte("collection_time", date.isoformat())
+            next_day = date + timedelta(days=1)
+            count_query = count_query.lt("collection_time", next_day.isoformat())
+        
+        # Get total count
+        count_response = count_query.execute()
+        total = count_response.count
+        
+        # Calculate pagination values
+        total_pages = math.ceil(total / per_page) if total > 0 else 1
+        offset = (page - 1) * per_page
+        
+        # Build query for actual data with joins
+        query = supabase.table("trips").select(select_query)
+        
+        # Apply same filters to data query
         if vehicle_id:
             query = query.eq("vehicle_id", vehicle_id)
         
@@ -121,30 +164,29 @@ async def get_trips(
         if route:
             query = query.eq("route", route)
         
-        if status:
-            query = query.eq("status", status)
+        if trip_status:
+            query = query.eq("status", trip_status)
         
         if date:
             query = query.gte("collection_time", date.isoformat())
-            next_day = date.replace(day=date.day + 1)
+            next_day = date + timedelta(days=1)
             query = query.lt("collection_time", next_day.isoformat())
         
-        response = query.order("collection_time", desc=True).execute()
+        # Apply pagination and ordering
+        response = query.order("collection_time", desc=True).range(offset, offset + per_page - 1).execute()
         
-        # Enrich trip data with driver and vehicle information
+        # Process trips data - the joins will include the related data
         enriched_trips = []
         for trip in response.data:
-            # Get driver info
-            driver = supabase.table("drivers").select("name").eq("id", trip["driver_id"]).execute()
-            
-            # Get vehicle info
-            vehicle = supabase.table("vehicles").select("reg_no").eq("id", trip["vehicle_id"]).execute()
+            # Extract vehicle and driver info from the joined data
+            vehicle_data = trip.get("vehicles", {})
+            driver_data = trip.get("drivers", {})
             
             # Create enriched trip object
             enriched_trip = {
-                **trip,
-                "driver_name": driver.data[0]["name"] if driver.data else None,
-                "vehicle_registration": vehicle.data[0]["reg_no"] if vehicle.data else None,
+                **{k: v for k, v in trip.items() if k not in ["vehicles", "drivers"]},  # Exclude join objects
+                "driver_name": driver_data.get("name"),
+                "vehicle_registration": vehicle_data.get("reg_no"),
                 "route": None,  # These fields are in TripDetail but we're not populating them here
                 "route_text": trip.get("route_text"),  # Include route_text in response
                 "origin": None,
@@ -160,7 +202,20 @@ async def get_trips(
             
             enriched_trips.append(enriched_trip)
         
-        return enriched_trips
+        # Create pagination metadata
+        pagination_meta = {
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "total_pages": total_pages,
+            "has_next": page < total_pages,
+            "has_prev": page > 1
+        }
+        
+        return {
+            "data": enriched_trips,
+            "meta": pagination_meta
+        }
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
