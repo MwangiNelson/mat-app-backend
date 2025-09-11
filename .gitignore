@@ -11,3 +11,4 @@
 *.vbs
 */_pycache_/*
 */logs/*
+reports_api.log
