@@ -84,6 +84,7 @@ Once the server is running, you can access the interactive API documentation:
 - `POST /api/auth/refresh` - Refresh access token
 - `GET /api/auth/me` - Get current user info
 - `PUT /api/auth/me` - Update current user info
+- 
 
 ### Vehicles
 
