@@ -19,8 +19,8 @@ jobs:
         username: ${{ secrets.VPS_USER }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         script: |
-          cd /home/${{ secrets.VPS_USER }}/myapp
+          cd /home/apps/risen
           git pull origin main
           source venv/bin/activate
           pip install -r requirements.txt
-          sudo systemctl restart myapp
+          sudo systemctl restart risen
