@@ -3,7 +3,8 @@ from typing import List, Any, Optional, Dict
 from datetime import date, timedelta, datetime
 import json
 
-from app.core.db import supabase
+from app.models import get_db
+from app.models.models import Vehicle, Trip, Deficit, DailySummary
 from app.core.security import get_current_user, check_admin_role
 from app.schemas.vehicle import (
     VehicleCreate,
@@ -11,6 +12,11 @@ from app.schemas.vehicle import (
     VehicleResponse,
     parse_date_string
 )
+from sqlalchemy.orm import Session
+from sqlalchemy import func
+import logging
+
+logger = logging.getLogger(__name__)
 from app.schemas.user import ErrorResponse
 from app.core.utils import DateTimeEncoder
 
@@ -88,6 +94,7 @@ async def get_expiring_vehicles(
 @router.get("/", response_model=List[VehicleResponse])
 async def get_vehicles(
     current_user = Depends(get_current_user),
+    db: Session = Depends(get_db),
     skip: int = 0,
     limit: int = 100,
     status: Optional[str] = None
@@ -96,63 +103,120 @@ async def get_vehicles(
     Retrieve all vehicles with optional status filtering.
     """
     try:
-        query = supabase.table("vehicles").select("*").order("reg_no").range(skip, skip + limit - 1)
-        
+        query = db.query(Vehicle).order_by(Vehicle.reg_no)
+
         if status:
-            query = query.eq("status", status)
-        
-        response = query.execute()
-        
-        # Convert date formats for each vehicle
-        for i in range(len(response.data)):
-            response.data[i] = convert_iso_dates_to_client_format(response.data[i])
-        
-        return response.data
+            query = query.filter(Vehicle.status == status)
+
+        vehicles = query.offset(skip).limit(limit).all()
+
+        # Convert to response format with date formatting
+        result = []
+        for vehicle in vehicles:
+            vehicle_dict = {
+                "id": str(vehicle.id),
+                "reg_no": vehicle.reg_no,
+                "model": vehicle.model,
+                "owner": vehicle.owner,
+                "status": vehicle.status,
+                "passenger_capacity": vehicle.passenger_capacity,
+                "insurance_expiry": vehicle.insurance_expiry.isoformat() if vehicle.insurance_expiry else None,
+                "tlb_expiry": vehicle.tlb_expiry.isoformat() if vehicle.tlb_expiry else None,
+                "inspection_expiry": vehicle.inspection_expiry.isoformat() if vehicle.inspection_expiry else None,
+                "speed_governor_expiry": vehicle.speed_governor_expiry.isoformat() if vehicle.speed_governor_expiry else None,
+                "created_at": vehicle.created_at.isoformat() if vehicle.created_at else None,
+                "updated_at": vehicle.updated_at.isoformat() if vehicle.updated_at else None,
+            }
+            # Apply date conversion formatting
+            vehicle_dict = convert_iso_dates_to_client_format(vehicle_dict)
+            result.append(vehicle_dict)
+
+        return result
+
     except Exception as e:
+        logger.error(f"Failed to retrieve vehicles: {str(e)}")
         raise create_vehicle_error(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message=f"Error retrieving vehicles: {str(e)}",
-            error_type="server_error"
+            message="Failed to retrieve vehicles. Please try again later.",
+            error_type="vehicles_retrieval_failed",
+            details={"error": str(e)}
         )
 
 @router.post("/", response_model=VehicleResponse)
 async def create_vehicle(
     vehicle_in: VehicleCreate,
-    current_user = Depends(check_admin_role)
+    current_user = Depends(check_admin_role),
+    db: Session = Depends(get_db)
 ) -> Any:
     """
     Create new vehicle.
     """
     try:
         # Check if reg_no already exists
-        existing = supabase.table("vehicles").select("*").eq("reg_no", vehicle_in.registration).execute()
-        
-        if existing.data:
+        existing_vehicle = db.query(Vehicle).filter(Vehicle.reg_no == vehicle_in.registration).first()
+
+        if existing_vehicle:
             raise create_vehicle_error(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                message="Vehicle with this registration number already exists",
-                error_type="duplicate_registration",
+                status_code=status.HTTP_409_CONFLICT,
+                message="A vehicle with this registration number already exists. Please use a different registration number.",
+                error_type="vehicle_registration_exists",
                 details={"registration": vehicle_in.registration}
             )
-        
-        # Convert to dict using by_alias=True to use the reg_no field name
-        vehicle_dict = vehicle_in.dict(by_alias=True)
-        
-        # Convert date objects to ISO strings for Supabase
-        for date_field in ['insurance_expiry', 'tlb_expiry', 'speed_governor_expiry', 'inspection_expiry']:
-            if date_field in vehicle_dict and isinstance(vehicle_dict[date_field], date):
-                vehicle_dict[date_field] = vehicle_dict[date_field].isoformat()
-        
-        response = supabase.table("vehicles").insert(vehicle_dict).execute()
-        
-        if not response.data:
-            raise create_vehicle_error(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="Failed to create vehicle",
-                error_type="database_error"
-            )
-        
-        return response.data[0]
+
+        # Parse dates from strings if needed
+        insurance_expiry = vehicle_in.insurance_expiry
+        if isinstance(insurance_expiry, str):
+            insurance_expiry = parse_date_string(insurance_expiry)
+
+        tlb_expiry = vehicle_in.tlb_expiry
+        if isinstance(tlb_expiry, str):
+            tlb_expiry = parse_date_string(tlb_expiry)
+
+        speed_governor_expiry = vehicle_in.speed_governor_expiry
+        if isinstance(speed_governor_expiry, str):
+            speed_governor_expiry = parse_date_string(speed_governor_expiry)
+
+        inspection_expiry = vehicle_in.inspection_expiry
+        if isinstance(inspection_expiry, str):
+            inspection_expiry = parse_date_string(inspection_expiry)
+
+        # Create new vehicle
+        new_vehicle = Vehicle(
+            reg_no=vehicle_in.registration,
+            model=vehicle_in.model,
+            owner=vehicle_in.owner,
+            status=vehicle_in.status,
+            insurance_expiry=insurance_expiry,
+            tlb_expiry=tlb_expiry,
+            speed_governor_expiry=speed_governor_expiry,
+            inspection_expiry=inspection_expiry,
+            passenger_capacity=vehicle_in.passenger_capacity
+        )
+
+        db.add(new_vehicle)
+        db.commit()
+        db.refresh(new_vehicle)
+
+        # Return formatted response
+        vehicle_dict = {
+            "id": str(new_vehicle.id),
+            "reg_no": new_vehicle.reg_no,
+            "model": new_vehicle.model,
+            "owner": new_vehicle.owner,
+            "status": new_vehicle.status,
+            "passenger_capacity": new_vehicle.passenger_capacity,
+            "insurance_expiry": new_vehicle.insurance_expiry.isoformat() if new_vehicle.insurance_expiry else None,
+            "tlb_expiry": new_vehicle.tlb_expiry.isoformat() if new_vehicle.tlb_expiry else None,
+            "inspection_expiry": new_vehicle.inspection_expiry.isoformat() if new_vehicle.inspection_expiry else None,
+            "speed_governor_expiry": new_vehicle.speed_governor_expiry.isoformat() if new_vehicle.speed_governor_expiry else None,
+            "created_at": new_vehicle.created_at.isoformat() if new_vehicle.created_at else None,
+            "updated_at": new_vehicle.updated_at.isoformat() if new_vehicle.updated_at else None,
+        }
+
+        # Apply date conversion formatting
+        vehicle_dict = convert_iso_dates_to_client_format(vehicle_dict)
+
+        return vehicle_dict
     
     except HTTPException:
         # Re-raise HTTP exceptions

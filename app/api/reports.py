@@ -14,9 +14,12 @@ import sys
 from jinja2 import Environment, FileSystemLoader, exceptions as jinja2_exceptions
 from xhtml2pdf import pisa
 
-from app.core.db import supabase
+from app.models import get_db
+from app.models.models import Trip, Driver, Vehicle, User
 from app.core.security import get_current_active_user
 from app.schemas.dashboard import ReportFormat, ReportResponse
+from sqlalchemy.orm import Session
+import logging
 
 # Set up logger
 logger = logging.getLogger(__name__)

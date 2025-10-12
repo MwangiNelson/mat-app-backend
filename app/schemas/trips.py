@@ -28,10 +28,11 @@ class TripCreate(BaseModel):
     collection_time: datetime  # Keep collection_time for API compatibility
     route: Optional[str] = None
     notes: Optional[str] = None
-    created_by: str
     collected_amount: Optional[int] = 0
     repair_expense: Optional[float] = 0
     status: TripStatus = TripStatus.COMPLETED
+
+    # created_by is automatically set from current user, not from payload
 
 class TripUpdate(BaseModel):
     notes: Optional[str] = None

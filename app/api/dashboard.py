@@ -2,14 +2,45 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import Any, Dict, List, Optional
 from datetime import datetime, date, time, timedelta
 
-from app.core.db import supabase
+from app.models import get_db
+from app.models.models import Trip, Driver, Vehicle, DailySummary
 from app.core.security import get_current_active_user
 from app.schemas.dashboard import DashboardOverview, DashboardStats, VehiclePerformance, DriverPerformance, TimeSeriesData, CollectionTrend, DetailedVehiclePerformance, VehiclePerformanceList, DetailedDriverPerformance, DriverPerformanceList, PerformanceSummary
+from app.schemas.user import ErrorResponse
+from app.core.utils import DateTimeEncoder
+from sqlalchemy.orm import Session
+from sqlalchemy import func, extract, and_, desc
+import logging
+import json
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-@router.get("/overview/finances", response_model=DashboardOverview)
-async def get_financial_overview(current_user = Depends(get_current_active_user)) -> Any:
+def create_dashboard_error(status_code: int, message: str, error_type: str, details: Dict = None) -> HTTPException:
+    """Create standardized dashboard API error response"""
+    # Ensure message is a string
+    message = str(message)
+
+    error_response = ErrorResponse(
+        status="error",
+        code=status_code,
+        message=message,
+        details=details,
+        errors=[{"type": error_type, "message": message}]
+    )
+
+    # Convert datetime to string in ISO format
+    content = json.loads(
+        json.dumps(error_response.dict(), cls=DateTimeEncoder)
+    )
+
+    return HTTPException(
+        status_code=status_code,
+        detail=content
+    )
+
+def get_financial_overview(db: Session) -> Dict:
     """
     Get financial overview for the dashboard cards:
     - Total revenue today
@@ -31,96 +62,94 @@ async def get_financial_overview(current_user = Depends(get_current_active_user)
         
         # 1. Calculate Total Revenue Today
         # Sum collected_amount from trips with collection_time today
-        today_trips = supabase.table("trips").select("collected_amount").gte("collection_time", f"{today_str}T00:00:00").lt("collection_time", f"{today_str}T23:59:59").execute()
-        
-        # Calculate total revenue from today's trips
-        total_revenue_today = 0
-        for trip in today_trips.data:
-            total_revenue_today += float(trip.get("collected_amount", 0) or 0)
-        
+        start_of_day = datetime.combine(today, datetime.min.time())
+        end_of_day = datetime.combine(today, datetime.max.time())
+
+        today_trips_result = db.query(func.sum(Trip.collected_amount)).filter(
+            Trip.collection_time >= start_of_day,
+            Trip.collection_time <= end_of_day
+        ).scalar()
+
+        total_revenue_today = float(today_trips_result or 0)
+
         # 2. Count Active Vehicles
-        active_vehicles_response = supabase.table("vehicles").select("id").eq("status", "active").execute()
-        active_vehicles_count = len(active_vehicles_response.data)
-        
+        active_vehicles_count = db.query(func.count(Vehicle.id)).filter(Vehicle.status == "active").scalar()
+
         # 2.1 Count Total Vehicles (all vehicles regardless of status)
-        total_vehicles_response = supabase.table("vehicles").select("id").execute()
-        total_vehicles_count = len(total_vehicles_response.data)
+        total_vehicles_count = db.query(func.count(Vehicle.id)).scalar()
         
         # 3. Upcoming Renewals - Calculate based on expiry dates
         # Get vehicles with any license expiring within the next 10 days
-        expiry_threshold = (today + timedelta(days=10)).isoformat()
-        
+        future_date = today + timedelta(days=10)
+
         # Query vehicles with any expiry date within the threshold
-        upcoming_renewal_vehicles = supabase.table("vehicles").select("id,reg_no,insurance_expiry,tlb_expiry,inspection_expiry,speed_governor_expiry").or_(
-            f"insurance_expiry.gte.{today_str},insurance_expiry.lte.{expiry_threshold}," +
-            f"tlb_expiry.gte.{today_str},tlb_expiry.lte.{expiry_threshold}," +
-            f"inspection_expiry.gte.{today_str},inspection_expiry.lte.{expiry_threshold}," +
-            f"speed_governor_expiry.gte.{today_str},speed_governor_expiry.lte.{expiry_threshold}"
-        ).execute()
-        
+        upcoming_renewal_vehicles = db.query(Vehicle).filter(
+            ((Vehicle.insurance_expiry >= today) & (Vehicle.insurance_expiry <= future_date)) |
+            ((Vehicle.tlb_expiry >= today) & (Vehicle.tlb_expiry <= future_date)) |
+            ((Vehicle.inspection_expiry >= today) & (Vehicle.inspection_expiry <= future_date)) |
+            ((Vehicle.speed_governor_expiry >= today) & (Vehicle.speed_governor_expiry <= future_date))
+        ).all()
+
         # Count vehicles with upcoming renewals
-        upcoming_renewals = len(upcoming_renewal_vehicles.data)
-        
+        upcoming_renewals = len(upcoming_renewal_vehicles)
+
         # Prepare detailed renewals information
         renewals = []
-        for vehicle in upcoming_renewal_vehicles.data:
+        for vehicle in upcoming_renewal_vehicles:
             expiring_licenses = []
-            
+
             # Check each expiry type
-            if vehicle.get("insurance_expiry") and today <= datetime.fromisoformat(vehicle["insurance_expiry"].replace('Z', '+00:00')).date() <= (today + timedelta(days=10)):
-                days_left = (datetime.fromisoformat(vehicle["insurance_expiry"].replace('Z', '+00:00')).date() - today).days
+            if vehicle.insurance_expiry and today <= vehicle.insurance_expiry <= future_date:
+                days_left = (vehicle.insurance_expiry - today).days
                 expiring_licenses.append({"license": "Insurance", "days_left": days_left})
-                
-            if vehicle.get("tlb_expiry") and today <= datetime.fromisoformat(vehicle["tlb_expiry"].replace('Z', '+00:00')).date() <= (today + timedelta(days=10)):
-                days_left = (datetime.fromisoformat(vehicle["tlb_expiry"].replace('Z', '+00:00')).date() - today).days
+
+            if vehicle.tlb_expiry and today <= vehicle.tlb_expiry <= future_date:
+                days_left = (vehicle.tlb_expiry - today).days
                 expiring_licenses.append({"license": "TLB", "days_left": days_left})
-                
-            if vehicle.get("inspection_expiry") and today <= datetime.fromisoformat(vehicle["inspection_expiry"].replace('Z', '+00:00')).date() <= (today + timedelta(days=10)):
-                days_left = (datetime.fromisoformat(vehicle["inspection_expiry"].replace('Z', '+00:00')).date() - today).days
+
+            if vehicle.inspection_expiry and today <= vehicle.inspection_expiry <= future_date:
+                days_left = (vehicle.inspection_expiry - today).days
                 expiring_licenses.append({"license": "Inspection", "days_left": days_left})
-                
-            if vehicle.get("speed_governor_expiry") and today <= datetime.fromisoformat(vehicle["speed_governor_expiry"].replace('Z', '+00:00')).date() <= (today + timedelta(days=10)):
-                days_left = (datetime.fromisoformat(vehicle["speed_governor_expiry"].replace('Z', '+00:00')).date() - today).days
+
+            if vehicle.speed_governor_expiry and today <= vehicle.speed_governor_expiry <= future_date:
+                days_left = (vehicle.speed_governor_expiry - today).days
                 expiring_licenses.append({"license": "Speed Governor", "days_left": days_left})
-            
+
             if expiring_licenses:
                 renewals.append({
-                    "vehicle_name": vehicle.get("reg_no", f"Vehicle {vehicle.get('id')}"),
+                    "vehicle_name": vehicle.reg_no,
                     "expiring_licenses": expiring_licenses
                 })
         
         # 4. Average Collection Per Vehicle
-        # First, get all active vehicles
-        all_vehicles = supabase.table("vehicles").select("id").execute()
-        
-        # Then, get all trips from the last 30 days to calculate average
-        thirty_days_ago = (today - timedelta(days=30)).isoformat()
-        recent_trips = supabase.table("trips").select("vehicle_id,collected_amount").gte("collection_time", f"{thirty_days_ago}T00:00:00").execute()
-        
-        # Calculate total collections per vehicle
-        vehicle_collections = {}
-        for trip in recent_trips.data:
-            vehicle_id = trip.get("vehicle_id")
-            if vehicle_id:
-                if vehicle_id not in vehicle_collections:
-                    vehicle_collections[vehicle_id] = 0
-                vehicle_collections[vehicle_id] += float(trip.get("collected_amount", 0) or 0)
-        
-        # Calculate average
-        if all_vehicles.data and len(all_vehicles.data) > 0:
-            total_collections = sum(vehicle_collections.values())
-            avg_collection_per_vehicle = total_collections / len(all_vehicles.data)
+        # Get all vehicles count
+        total_vehicles_for_avg = db.query(func.count(Vehicle.id)).scalar()
+
+        # Get all trips from the last 30 days to calculate average
+        thirty_days_ago = datetime.combine(today - timedelta(days=30), datetime.min.time())
+        recent_trips_stats = db.query(
+            func.sum(Trip.collected_amount).label('total_collections')
+        ).filter(Trip.collection_time >= thirty_days_ago).scalar()
+
+        total_recent_collections = float(recent_trips_stats or 0)
+
+        # Calculate average per vehicle
+        if total_vehicles_for_avg and total_vehicles_for_avg > 0:
+            avg_collection_per_vehicle = total_recent_collections / total_vehicles_for_avg
         else:
             avg_collection_per_vehicle = 0
         
         # 5. Revenue comparison between today and yesterday
-        yesterday_trips = supabase.table("trips").select("collected_amount").gte("collection_time", f"{yesterday_str}T00:00:00").lt("collection_time", f"{yesterday_str}T23:59:59").execute()
-        
-        # Calculate yesterday's revenue
-        total_revenue_yesterday = 0
-        for trip in yesterday_trips.data:
-            total_revenue_yesterday += float(trip.get("collected_amount", 0) or 0)
-        
+        yesterday_start = datetime.combine(yesterday, datetime.min.time())
+        yesterday_end = datetime.combine(yesterday, datetime.max.time())
+
+        yesterday_revenue_result = db.query(func.sum(Trip.collected_amount)).filter(
+            Trip.collection_time >= yesterday_start,
+            Trip.collection_time <= yesterday_end
+        ).scalar()
+
+        total_revenue_yesterday = float(yesterday_revenue_result or 0)
+
         # Calculate percentage change
         if total_revenue_yesterday > 0:
             revenue_comparison = ((total_revenue_today - total_revenue_yesterday) / total_revenue_yesterday) * 100
@@ -128,36 +157,31 @@ async def get_financial_overview(current_user = Depends(get_current_active_user)
             revenue_comparison = 100 if total_revenue_today > 0 else 0
         
         # 6. Calculate vehicle utilization
-        # Get all trips that were active today by looking at collection_time and status
-        all_active_trips_today = supabase.table("trips").select("vehicle_id").gte("collection_time", f"{today_str}T00:00:00").lt("collection_time", f"{today_str}T23:59:59").execute()
-        
         # Count unique vehicles that had trips today
-        active_vehicles_today = set()
-        for trip in all_active_trips_today.data:
-            if trip.get("vehicle_id"):
-                active_vehicles_today.add(trip.get("vehicle_id"))
-        
+        active_vehicles_today_count = db.query(func.count(func.distinct(Trip.vehicle_id))).filter(
+            Trip.collection_time >= start_of_day,
+            Trip.collection_time <= end_of_day
+        ).scalar()
+
         # Calculate utilization percentage
         if active_vehicles_count > 0:
-            vehicle_utilization = (len(active_vehicles_today) / active_vehicles_count) * 100
+            vehicle_utilization = (active_vehicles_today_count / active_vehicles_count) * 100
         else:
             vehicle_utilization = 0
         
         # 7. Average collection compared to previous week
-        prev_week_start = week_ago - timedelta(days=7)
-        prev_week_trips = supabase.table("trips").select("vehicle_id,collected_amount").gte("collection_time", f"{prev_week_start.isoformat()}T00:00:00").lt("collection_time", f"{week_ago.isoformat()}T00:00:00").execute()
-        
-        # Calculate previous week's average
-        prev_week_collections = {}
-        for trip in prev_week_trips.data:
-            vehicle_id = trip.get("vehicle_id")
-            if vehicle_id:
-                if vehicle_id not in prev_week_collections:
-                    prev_week_collections[vehicle_id] = 0
-                prev_week_collections[vehicle_id] += float(trip.get("collected_amount", 0) or 0)
-        
-        if prev_week_collections and len(all_vehicles.data) > 0:
-            prev_week_avg = sum(prev_week_collections.values()) / len(all_vehicles.data)
+        prev_week_start = datetime.combine(week_ago - timedelta(days=7), datetime.min.time())
+        prev_week_end = datetime.combine(week_ago, datetime.max.time())
+
+        prev_week_revenue_result = db.query(func.sum(Trip.collected_amount)).filter(
+            Trip.collection_time >= prev_week_start,
+            Trip.collection_time <= prev_week_end
+        ).scalar()
+
+        prev_week_total = float(prev_week_revenue_result or 0)
+
+        if total_vehicles_for_avg and total_vehicles_for_avg > 0:
+            prev_week_avg = prev_week_total / total_vehicles_for_avg
             if prev_week_avg > 0:
                 avg_collection_comparison = ((avg_collection_per_vehicle - prev_week_avg) / prev_week_avg) * 100
             else:
@@ -179,15 +203,33 @@ async def get_financial_overview(current_user = Depends(get_current_active_user)
         }
         
     except Exception as e:
-        raise HTTPException(
+        logger.error(f"Error fetching financial overview: {str(e)}")
+        raise e
+
+@router.get("/overview/finances", response_model=DashboardOverview)
+async def get_financial_overview_endpoint(
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Get financial overview for the dashboard cards.
+    """
+    try:
+        return get_financial_overview(db)
+    except Exception as e:
+        logger.error(f"Error in financial overview endpoint: {str(e)}")
+        raise create_dashboard_error(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error fetching financial overview: {str(e)}"
+            message="Failed to retrieve financial overview. Please try again later.",
+            error_type="financial_overview_failed",
+            details={"error": str(e)}
         )
 
 @router.get("/stats", response_model=DashboardStats)
 async def get_dashboard_stats(
     days: int = 30,
-    current_user = Depends(get_current_active_user)
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
 ) -> Any:
     """
     Get comprehensive dashboard statistics including:
@@ -205,19 +247,19 @@ async def get_dashboard_stats(
         start_date = today - timedelta(days=days)
         
         # Get the financial overview first
-        overview = await get_financial_overview(current_user)
+        overview = get_financial_overview(db)
         
         # Get all trips in the date range
-        trips_response = supabase.table("trips").select("*").gte("collection_time", start_date.isoformat()).execute()
-        trips = trips_response.data
+        start_datetime = datetime.combine(start_date, datetime.min.time())
+        trips = db.query(Trip).filter(Trip.collection_time >= start_datetime).all()
         
         # Process vehicle performance
         vehicle_metrics: Dict[str, Dict] = {}
         for trip in trips:
-            vehicle_id = trip.get("vehicle_id")
+            vehicle_id = str(trip.vehicle_id)
             if not vehicle_id:
                 continue
-                
+
             if vehicle_id not in vehicle_metrics:
                 vehicle_metrics[vehicle_id] = {
                     "vehicle_id": vehicle_id,
@@ -225,28 +267,27 @@ async def get_dashboard_stats(
                     "total_expenses": 0,
                     "trip_count": 0
                 }
-            
+
             # Add collections
-            collected = float(trip.get("collected_amount", 0) or 0)
+            collected = float(trip.collected_amount or 0)
             vehicle_metrics[vehicle_id]["total_collections"] += collected
-            
+
             # Add expenses
-            fuel_expense = float(trip.get("fuel_expense", 0) or 0)
-            repair_expense = float(trip.get("repair_expense", 0) or 0)
-            vehicle_metrics[vehicle_id]["total_expenses"] += (fuel_expense + repair_expense)
-            
+            repair_expense = float(trip.repair_expense or 0)
+            vehicle_metrics[vehicle_id]["total_expenses"] += repair_expense
+
             # Count trip
             vehicle_metrics[vehicle_id]["trip_count"] += 1
-        
+
         # Get vehicle registration numbers
-        vehicle_ids = list(vehicle_metrics.keys())
+        vehicle_ids = [vid for vid in vehicle_metrics.keys()]
         if vehicle_ids:
-            vehicles_response = supabase.table("vehicles").select("id,registration").in_("id", vehicle_ids).execute()
-            
-            for vehicle in vehicles_response.data:
-                v_id = vehicle.get("id")
+            vehicles = db.query(Vehicle).filter(Vehicle.id.in_(vehicle_ids)).all()
+
+            for vehicle in vehicles:
+                v_id = str(vehicle.id)
                 if v_id in vehicle_metrics:
-                    vehicle_metrics[v_id]["registration"] = vehicle.get("registration", "Unknown")
+                    vehicle_metrics[v_id]["registration"] = vehicle.reg_no
         
         # Calculate net profit and prepare top vehicles list
         top_vehicles = []
@@ -265,33 +306,33 @@ async def get_dashboard_stats(
         # Process driver performance
         driver_metrics: Dict[str, Dict] = {}
         for trip in trips:
-            driver_id = trip.get("driver_id")
+            driver_id = str(trip.driver_id)
             if not driver_id:
                 continue
-                
+
             if driver_id not in driver_metrics:
                 driver_metrics[driver_id] = {
                     "driver_id": driver_id,
                     "total_collections": 0,
                     "trip_count": 0
                 }
-            
+
             # Add collections
-            collected = float(trip.get("collected_amount", 0) or 0)
+            collected = float(trip.collected_amount or 0)
             driver_metrics[driver_id]["total_collections"] += collected
-            
+
             # Count trip
             driver_metrics[driver_id]["trip_count"] += 1
         
         # Get driver names
-        driver_ids = list(driver_metrics.keys())
+        driver_ids = [did for did in driver_metrics.keys()]
         if driver_ids:
-            drivers_response = supabase.table("drivers").select("id,name").in_("id", driver_ids).execute()
-            
-            for driver in drivers_response.data:
-                d_id = driver.get("id")
+            drivers = db.query(Driver).filter(Driver.id.in_(driver_ids)).all()
+
+            for driver in drivers:
+                d_id = str(driver.id)
                 if d_id in driver_metrics:
-                    driver_metrics[d_id]["name"] = driver.get("name", "Unknown")
+                    driver_metrics[d_id]["name"] = driver.name
         
         # Calculate average per trip and prepare top drivers list
         top_drivers = []
@@ -313,31 +354,27 @@ async def get_dashboard_stats(
         # Process time series data
         day_metrics: Dict[str, Dict[str, float]] = {}
         for trip in trips:
-            # Get the date from start_time
-            start_time = trip.get("collection_time")
-            if not start_time:
+            # Get the date from collection_time
+            collection_time = trip.collection_time
+            if not collection_time:
                 continue
-                
+
             # Convert to date
-            if isinstance(start_time, str):
-                trip_date = datetime.fromisoformat(start_time.replace('Z', '+00:00')).date().isoformat()
-            else:
-                trip_date = start_time.date().isoformat()
-                
+            trip_date = collection_time.date().isoformat()
+
             if trip_date not in day_metrics:
                 day_metrics[trip_date] = {
                     "revenue": 0,
                     "expenses": 0
                 }
-            
+
             # Add revenue
-            collected = float(trip.get("collected_amount", 0) or 0)
+            collected = float(trip.collected_amount or 0)
             day_metrics[trip_date]["revenue"] += collected
-            
-            # Add expenses
-            fuel_expense = float(trip.get("fuel_expense", 0) or 0)
-            repair_expense = float(trip.get("repair_expense", 0) or 0)
-            day_metrics[trip_date]["expenses"] += (fuel_expense + repair_expense)
+
+            # Add expenses (only repair_expense since fuel_expense doesn't exist in our schema)
+            repair_expense = float(trip.repair_expense or 0)
+            day_metrics[trip_date]["expenses"] += repair_expense
         
         # Prepare time series data
         revenue_by_day = []
@@ -368,16 +405,20 @@ async def get_dashboard_stats(
         }
         
     except Exception as e:
-        raise HTTPException(
+        logger.error(f"Error fetching dashboard statistics: {str(e)}")
+        raise create_dashboard_error(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error fetching dashboard statistics: {str(e)}"
+            message="Failed to retrieve dashboard statistics. Please try again later.",
+            error_type="dashboard_stats_failed",
+            details={"error": str(e)}
         )
 
 @router.get("/trends/collections", response_model=CollectionTrend)
 async def get_collection_trends(
     start_date: Optional[str] = Query(None, description="Start date for trend data (DD-MM-YYYY)"),
     end_date: Optional[str] = Query(None, description="End date for trend data (DD-MM-YYYY)"),
-    current_user = Depends(get_current_active_user)
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
 ) -> Any:
     """
     Get trends of money collections within a specified date range.
@@ -400,9 +441,11 @@ async def get_collection_trends(
                 day, month, year = map(int, start_date.split('-'))
                 parsed_start_date = date(year, month, day)
             except (ValueError, TypeError):
-                raise HTTPException(
+                raise create_dashboard_error(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid start_date format. Please use DD-MM-YYYY"
+                    message="Invalid start_date format. Please use DD-MM-YYYY",
+                    error_type="invalid_date_format",
+                    details={"field": "start_date", "expected_format": "DD-MM-YYYY"}
                 )
         else:
             parsed_start_date = today - timedelta(days=6)  # 7 days including today
@@ -416,9 +459,11 @@ async def get_collection_trends(
                 if parsed_end_date > today:
                     parsed_end_date = today
             except (ValueError, TypeError):
-                raise HTTPException(
+                raise create_dashboard_error(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid end_date format. Please use DD-MM-YYYY"
+                    message="Invalid end_date format. Please use DD-MM-YYYY",
+                    error_type="invalid_date_format",
+                    details={"field": "end_date", "expected_format": "DD-MM-YYYY"}
                 )
         else:
             parsed_end_date = today
@@ -433,9 +478,14 @@ async def get_collection_trends(
         
         # Validate date range
         if parsed_end_date < parsed_start_date:
-            raise HTTPException(
+            raise create_dashboard_error(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="End date must be greater than or equal to start date"
+                message="End date must be greater than or equal to start date",
+                error_type="invalid_date_range",
+                details={
+                    "start_date": parsed_start_date.isoformat(),
+                    "end_date": parsed_end_date.isoformat()
+                }
             )
         
         # Initialize result structure with dates in range
@@ -455,34 +505,33 @@ async def get_collection_trends(
         } for date_str in date_range}
         
         # Get trips in date range
-        trips_response = supabase.table("trips").select("*").gte("collection_time", f"{parsed_start_date.isoformat()}T00:00:00").lte("collection_time", f"{parsed_end_date.isoformat()}T23:59:59").execute()
-        
+        start_datetime = datetime.combine(parsed_start_date, datetime.min.time())
+        end_datetime = datetime.combine(parsed_end_date, datetime.max.time())
+
+        trips = db.query(Trip).filter(
+            Trip.collection_time >= start_datetime,
+            Trip.collection_time <= end_datetime
+        ).all()
+
         # Process trips data
-        for trip in trips_response.data:
-            # Extract date from start_time
-            if isinstance(trip.get("collection_time"), str):
-                trip_date = datetime.fromisoformat(trip.get("collection_time").replace('Z', '+00:00')).date().isoformat()
-            else:
-                trip_date = trip.get("collection_time").date().isoformat()
-            
+        for trip in trips:
+            # Extract date from collection_time
+            trip_date = trip.collection_time.date().isoformat()
+
             # Skip if date is not in our range
             if trip_date not in trend_data:
                 continue
-            
+
             # Add collection amount
-            collected_amount = float(trip.get("collected_amount", 0) or 0)
+            collected_amount = float(trip.collected_amount or 0)
             trend_data[trip_date]["collection_amount"] += collected_amount
-            
-            # Add fuel expense
-            fuel_expense = float(trip.get("fuel_cost", 0) or 0)
-            trend_data[trip_date]["fuel_expense"] += fuel_expense
-            
-            # Add repair expense (using other_expenses as repair expense)
-            repair_expense = float(trip.get("other_expenses", 0) or 0)
+
+            # Add repair expense (fuel expense doesn't exist in our schema)
+            repair_expense = float(trip.repair_expense or 0)
             trend_data[trip_date]["repair_expense"] += repair_expense
-            
-            # Calculate total expense
-            trend_data[trip_date]["total_expense"] = trend_data[trip_date]["fuel_expense"] + trend_data[trip_date]["repair_expense"]
+
+            # Calculate total expense (only repair expense in our schema)
+            trend_data[trip_date]["total_expense"] = repair_expense
         
         # Convert dict to list for response
         result_data = list(trend_data.values())
@@ -497,16 +546,20 @@ async def get_collection_trends(
         }
         
     except Exception as e:
-        raise HTTPException(
+        logger.error(f"Error fetching collection trends: {str(e)}")
+        raise create_dashboard_error(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error fetching collection trends: {str(e)}"
+            message="Failed to retrieve collection trends. Please try again later.",
+            error_type="collection_trends_failed",
+            details={"error": str(e)}
         )
 
 @router.get("/performance/vehicles", response_model=VehiclePerformanceList)
 async def get_vehicle_performance(
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
-    current_user = Depends(get_current_active_user)
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
 ) -> Any:
     """
     Get performance metrics for all vehicles.
@@ -553,9 +606,9 @@ async def get_vehicle_performance(
             )
             
         # Get all active vehicles
-        vehicles_response = supabase.table("vehicles").select("id,reg_no").execute()
-        
-        if not vehicles_response.data:
+        vehicles = db.query(Vehicle).filter(Vehicle.status == "active").all()
+
+        if not vehicles:
             return {
                 "vehicles": [],
                 "total_vehicles": 0,
@@ -565,20 +618,25 @@ async def get_vehicle_performance(
                 "start_date": parsed_start_date,
                 "end_date": parsed_end_date
             }
-        
+
         # Get all trips in date range for these vehicles
-        trips_response = supabase.table("trips").select("*").gte("collection_time", parsed_start_date.isoformat()).lte("collection_time", parsed_end_date.isoformat()).execute()
+        start_datetime = datetime.combine(parsed_start_date, datetime.min.time())
+        end_datetime = datetime.combine(parsed_end_date, datetime.max.time())
+        trips = db.query(Trip).filter(
+            Trip.collection_time >= start_datetime,
+            Trip.collection_time <= end_datetime
+        ).all()
         
         # Process data for each vehicle
         vehicle_metrics = {}
         date_range = (parsed_end_date - parsed_start_date).days + 1
         
         # Initialize vehicle metrics
-        for vehicle in vehicles_response.data:
-            vehicle_id = vehicle["id"]
+        for vehicle in vehicles:
+            vehicle_id = str(vehicle.id)
             vehicle_metrics[vehicle_id] = {
                 "vehicle_id": vehicle_id,
-                "registration": vehicle.get("reg_no", "Unknown"),
+                "registration": vehicle.reg_no or "Unknown",
                 "total_collections": 0,
                 "total_expenses": 0,
                 "fuel_expense": 0,
@@ -591,30 +649,30 @@ async def get_vehicle_performance(
             }
         
         # Process trip data
-        for trip in trips_response.data:
-            vehicle_id = trip.get("vehicle_id")
+        for trip in trips:
+            vehicle_id = str(trip.vehicle_id) if trip.vehicle_id else None
             if not vehicle_id or vehicle_id not in vehicle_metrics:
                 continue
-            
+
             # Extract values
-            collected_amount = float(trip.get("collected_amount", 0) or 0)
-            fuel_expense = float(trip.get("fuel_expense", 0) or 0)
-            repair_expense = float(trip.get("repair_expense", 0) or 0)
+            collected_amount = float(trip.collected_amount or 0)
+            fuel_expense = float(trip.fuel_expense or 0) if hasattr(trip, 'fuel_expense') else 0
+            repair_expense = float(trip.repair_expense or 0)
             total_expense = fuel_expense + repair_expense
-            
+
             # Get trip date
-            if "collection_time" in trip and trip["collection_time"]:
-                trip_date_str = datetime.fromisoformat(trip["collection_time"].replace('Z', '+00:00')).date().isoformat()
+            if trip.collection_time:
+                trip_date_str = trip.collection_time.date().isoformat()
                 vehicle_metrics[vehicle_id]["active_days"].add(trip_date_str)
-                
+
                 # Add to daily collections/expenses
                 if trip_date_str not in vehicle_metrics[vehicle_id]["collections_by_date"]:
                     vehicle_metrics[vehicle_id]["collections_by_date"][trip_date_str] = 0
                     vehicle_metrics[vehicle_id]["expenses_by_date"][trip_date_str] = 0
-                
+
                 vehicle_metrics[vehicle_id]["collections_by_date"][trip_date_str] += collected_amount
                 vehicle_metrics[vehicle_id]["expenses_by_date"][trip_date_str] += total_expense
-            
+
             # Update aggregates
             vehicle_metrics[vehicle_id]["total_collections"] += collected_amount
             vehicle_metrics[vehicle_id]["fuel_expense"] += fuel_expense
@@ -683,7 +741,8 @@ async def get_vehicle_detail_performance(
     vehicle_id: str,
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
-    current_user = Depends(get_current_active_user)
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
 ) -> Any:
     """
     Get detailed performance metrics for a specific vehicle including daily breakdowns.
@@ -716,21 +775,27 @@ async def get_vehicle_detail_performance(
                 )
         
         # Check if vehicle exists
-        vehicle_response = supabase.table("vehicles").select("id,reg_no").eq("id", vehicle_id).execute()
-        
-        if not vehicle_response.data:
+        vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
+
+        if not vehicle:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Vehicle not found"
             )
-        
+
         # Get all trips for this vehicle in date range
-        trips_response = supabase.table("trips").select("*").eq("vehicle_id", vehicle_id).gte("collection_time", parsed_start_date.isoformat()).lte("collection_time", parsed_end_date.isoformat()).execute()
+        start_datetime = datetime.combine(parsed_start_date, datetime.min.time())
+        end_datetime = datetime.combine(parsed_end_date, datetime.max.time())
+        trips = db.query(Trip).filter(
+            Trip.vehicle_id == vehicle_id,
+            Trip.collection_time >= start_datetime,
+            Trip.collection_time <= end_datetime
+        ).all()
         
         # Initialize performance metrics
         vehicle_detail = {
             "vehicle_id": vehicle_id,
-            "registration": vehicle_response.data[0].get("reg_no", "Unknown"),
+            "registration": vehicle.reg_no or "Unknown",
             "total_collections": 0,
             "total_expenses": 0,
             "fuel_expense": 0,
@@ -747,20 +812,20 @@ async def get_vehicle_detail_performance(
         daily_data = {}
         date_range = (parsed_end_date - parsed_start_date).days + 1
         active_days = set()
-        
-        for trip in trips_response.data:
+
+        for trip in trips:
             # Extract values
-            collected_amount = float(trip.get("collected_amount", 0) or 0)
-            fuel_expense = float(trip.get("fuel_expense", 0) or 0)
-            repair_expense = float(trip.get("repair_expense", 0) or 0)
+            collected_amount = float(trip.collected_amount or 0)
+            fuel_expense = float(trip.fuel_expense or 0) if hasattr(trip, 'fuel_expense') else 0
+            repair_expense = float(trip.repair_expense or 0)
             total_expense = fuel_expense + repair_expense
-            
+
             # Get trip date
-            if "collection_time" in trip and trip["collection_time"]:
-                trip_date = datetime.fromisoformat(trip["collection_time"].replace('Z', '+00:00')).date()
+            if trip.collection_time:
+                trip_date = trip.collection_time.date()
                 trip_date_str = trip_date.isoformat()
                 active_days.add(trip_date_str)
-                
+
                 # Initialize daily data if needed
                 if trip_date_str not in daily_data:
                     daily_data[trip_date_str] = {
@@ -770,14 +835,14 @@ async def get_vehicle_detail_performance(
                         "total_expense": 0,
                         "trip_count": 0
                     }
-                
+
                 # Add to daily data
                 daily_data[trip_date_str]["collection"] += collected_amount
                 daily_data[trip_date_str]["fuel_expense"] += fuel_expense
                 daily_data[trip_date_str]["repair_expense"] += repair_expense
                 daily_data[trip_date_str]["total_expense"] += total_expense
                 daily_data[trip_date_str]["trip_count"] += 1
-            
+
             # Update aggregates
             vehicle_detail["total_collections"] += collected_amount
             vehicle_detail["fuel_expense"] += fuel_expense
@@ -839,7 +904,8 @@ async def get_vehicle_detail_performance(
 async def get_driver_performance(
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
-    current_user = Depends(get_current_active_user)
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
 ) -> Any:
     """
     Get performance metrics for all drivers.
@@ -886,9 +952,9 @@ async def get_driver_performance(
             )
             
         # Get all active drivers
-        drivers_response = supabase.table("drivers").select("id,name").execute()
-        
-        if not drivers_response.data:
+        drivers = db.query(Driver).all()
+
+        if not drivers:
             return {
                 "drivers": [],
                 "total_drivers": 0,
@@ -897,19 +963,24 @@ async def get_driver_performance(
                 "start_date": parsed_start_date,
                 "end_date": parsed_end_date
             }
-        
+
         # Get all trips in date range
-        trips_response = supabase.table("trips").select("*").gte("collection_time", parsed_start_date.isoformat()).lte("collection_time", parsed_end_date.isoformat()).execute()
+        start_datetime = datetime.combine(parsed_start_date, datetime.min.time())
+        end_datetime = datetime.combine(parsed_end_date, datetime.max.time())
+        trips = db.query(Trip).filter(
+            Trip.collection_time >= start_datetime,
+            Trip.collection_time <= end_datetime
+        ).all()
         
         # Process data for each driver
         driver_metrics = {}
         
         # Initialize driver metrics
-        for driver in drivers_response.data:
-            driver_id = driver["id"]
+        for driver in drivers:
+            driver_id = str(driver.id)
             driver_metrics[driver_id] = {
                 "driver_id": driver_id,
-                "name": driver.get("name", "Unknown"),
+                "name": driver.name or "Unknown",
                 "total_collections": 0,
                 "trip_count": 0,
                 "total_expected": 0,  # For calculating efficiency
@@ -919,36 +990,36 @@ async def get_driver_performance(
         
         # Get vehicle registrations for reference
         vehicle_ids = set()
-        for trip in trips_response.data:
-            if trip.get("vehicle_id"):
-                vehicle_ids.add(trip["vehicle_id"])
-        
+        for trip in trips:
+            if trip.vehicle_id:
+                vehicle_ids.add(str(trip.vehicle_id))
+
         vehicle_reg_map = {}
         if vehicle_ids:
-            vehicles_response = supabase.table("vehicles").select("id,reg_no").in_("id", list(vehicle_ids)).execute()
-            for vehicle in vehicles_response.data:
-                vehicle_reg_map[vehicle["id"]] = vehicle.get("reg_no", "Unknown")
+            vehicles = db.query(Vehicle).filter(Vehicle.id.in_(list(vehicle_ids))).all()
+            for vehicle in vehicles:
+                vehicle_reg_map[str(vehicle.id)] = vehicle.reg_no or "Unknown"
         
         # Process trip data
-        for trip in trips_response.data:
-            driver_id = trip.get("driver_id")
+        for trip in trips:
+            driver_id = str(trip.driver_id) if trip.driver_id else None
             if not driver_id or driver_id not in driver_metrics:
                 continue
-            
+
             # Extract values
-            collected_amount = float(trip.get("collected_amount", 0) or 0)
-            expected_amount = float(trip.get("expected_amount", 0) or 0)
-            vehicle_id = trip.get("vehicle_id")
-            
+            collected_amount = float(trip.collected_amount or 0)
+            expected_amount = float(trip.expected_amount or 0) if hasattr(trip, 'expected_amount') else 0
+            vehicle_id = str(trip.vehicle_id) if trip.vehicle_id else None
+
             # Update aggregates
             driver_metrics[driver_id]["total_collections"] += collected_amount
             driver_metrics[driver_id]["total_expected"] += expected_amount
             driver_metrics[driver_id]["trip_count"] += 1
-            
+
             # Track vehicles driven
             if vehicle_id:
                 driver_metrics[driver_id]["vehicles"].add(vehicle_id)
-                
+
                 # Count trips per vehicle
                 if vehicle_id not in driver_metrics[driver_id]["vehicle_trips"]:
                     driver_metrics[driver_id]["vehicle_trips"][vehicle_id] = 0
@@ -1011,7 +1082,8 @@ async def get_driver_detail_performance(
     driver_id: str,
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
-    current_user = Depends(get_current_active_user)
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
 ) -> Any:
     """
     Get detailed performance metrics for a specific driver including daily breakdowns.
@@ -1044,21 +1116,27 @@ async def get_driver_detail_performance(
                 )
         
         # Check if driver exists
-        driver_response = supabase.table("drivers").select("id,name").eq("id", driver_id).execute()
-        
-        if not driver_response.data:
+        driver = db.query(Driver).filter(Driver.id == driver_id).first()
+
+        if not driver:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Driver not found"
             )
-        
+
         # Get all trips for this driver in date range
-        trips_response = supabase.table("trips").select("*").eq("driver_id", driver_id).gte("collection_time", parsed_start_date.isoformat()).lte("collection_time", parsed_end_date.isoformat()).execute()
+        start_datetime = datetime.combine(parsed_start_date, datetime.min.time())
+        end_datetime = datetime.combine(parsed_end_date, datetime.max.time())
+        trips = db.query(Trip).filter(
+            Trip.driver_id == driver_id,
+            Trip.collection_time >= start_datetime,
+            Trip.collection_time <= end_datetime
+        ).all()
         
         # Initialize performance metrics
         driver_detail = {
             "driver_id": driver_id,
-            "name": driver_response.data[0].get("name", "Unknown"),
+            "name": driver.name or "Unknown",
             "total_collections": 0,
             "trip_count": 0,
             "avg_per_trip": 0,
@@ -1076,38 +1154,38 @@ async def get_driver_detail_performance(
         total_expected = 0
         vehicles_driven = set()
         vehicle_trips = {}
-        
-        for trip in trips_response.data:
+
+        for trip in trips:
             # Extract values
-            collected_amount = float(trip.get("collected_amount", 0) or 0)
-            expected_amount = float(trip.get("expected_amount", 0) or 0)
-            vehicle_id = trip.get("vehicle_id")
-            
+            collected_amount = float(trip.collected_amount or 0)
+            expected_amount = float(trip.expected_amount or 0) if hasattr(trip, 'expected_amount') else 0
+            vehicle_id = str(trip.vehicle_id) if trip.vehicle_id else None
+
             # Get trip date
-            if "collection_time" in trip and trip["collection_time"]:
-                trip_date = datetime.fromisoformat(trip["collection_time"].replace('Z', '+00:00')).date()
+            if trip.collection_time:
+                trip_date = trip.collection_time.date()
                 trip_date_str = trip_date.isoformat()
-                
+
                 # Initialize daily data if needed
                 if trip_date_str not in daily_data:
                     daily_data[trip_date_str] = {
                         "collection": 0,
                         "trip_count": 0
                     }
-                
+
                 # Add to daily data
                 daily_data[trip_date_str]["collection"] += collected_amount
                 daily_data[trip_date_str]["trip_count"] += 1
-            
+
             # Track vehicle usage
             if vehicle_id:
                 vehicles_driven.add(vehicle_id)
-                
+
                 # Count trips per vehicle
                 if vehicle_id not in vehicle_trips:
                     vehicle_trips[vehicle_id] = 0
                 vehicle_trips[vehicle_id] += 1
-                
+
                 # Collect data per vehicle
                 if vehicle_id not in vehicle_data:
                     vehicle_data[vehicle_id] = {
@@ -1116,10 +1194,10 @@ async def get_driver_detail_performance(
                         "trip_count": 0,
                         "total_collections": 0
                     }
-                
+
                 vehicle_data[vehicle_id]["trip_count"] += 1
                 vehicle_data[vehicle_id]["total_collections"] += collected_amount
-            
+
             # Update aggregates
             driver_detail["total_collections"] += collected_amount
             driver_detail["trip_count"] += 1
@@ -1127,10 +1205,11 @@ async def get_driver_detail_performance(
         
         # Get vehicle registrations
         if vehicles_driven:
-            vehicles_response = supabase.table("vehicles").select("id,reg_no").in_("id", list(vehicles_driven)).execute()
-            for vehicle in vehicles_response.data:
-                if vehicle["id"] in vehicle_data:
-                    vehicle_data[vehicle["id"]]["registration"] = vehicle.get("reg_no", "Unknown")
+            vehicles = db.query(Vehicle).filter(Vehicle.id.in_(list(vehicles_driven))).all()
+            for vehicle in vehicles:
+                vehicle_id_str = str(vehicle.id)
+                if vehicle_id_str in vehicle_data:
+                    vehicle_data[vehicle_id_str]["registration"] = vehicle.reg_no or "Unknown"
         
         # Find most driven vehicle
         most_driven_vehicle = None
@@ -1191,7 +1270,8 @@ async def get_performance_summary(
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     vehicle_ids: Optional[List[str]] = Query(None, description="List of vehicle IDs to filter by"),
     driver_ids: Optional[List[str]] = Query(None, description="List of driver IDs to filter by"),
-    current_user = Depends(get_current_active_user)
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
 ) -> Any:
     """
     Get a summary of performance metrics across specified vehicles and drivers.
@@ -1235,23 +1315,26 @@ async def get_performance_summary(
                 detail="End date must be after start date"
             )
         
-        start_datetime = datetime.combine(parsed_start_date, time.min).isoformat()  # 00:00:00
-        end_datetime = datetime.combine(parsed_end_date, time.max).isoformat()  # 23:59:59.999999
+        start_datetime = datetime.combine(parsed_start_date, time.min)
+        end_datetime = datetime.combine(parsed_end_date, time.max)
 
-        
+
         # Build the query with date range filter
-        query = supabase.table("trips").select("*").gte("collection_time", start_datetime).lte("collection_time", end_datetime)
-        
+        query = db.query(Trip).filter(
+            Trip.collection_time >= start_datetime,
+            Trip.collection_time <= end_datetime
+        )
+
         # Add vehicle filter if provided
         if vehicle_ids and len(vehicle_ids) > 0:
-            query = query.in_("vehicle_id", vehicle_ids)
-        
+            query = query.filter(Trip.vehicle_id.in_(vehicle_ids))
+
         # Add driver filter if provided
         if driver_ids and len(driver_ids) > 0:
-            query = query.in_("driver_id", driver_ids)
-        
+            query = query.filter(Trip.driver_id.in_(driver_ids))
+
         # Execute the query
-        trips_response = query.execute()
+        trips = query.all()
         
         # Initialize counters
         total_collections = 0.0
@@ -1260,12 +1343,12 @@ async def get_performance_summary(
         trip_count = 0
         
         # Process trip data
-        for trip in trips_response.data:
+        for trip in trips:
             # Extract values with safety checks
-            collected_amount = float(trip.get("collected_amount", 0) or 0)
-            fuel_expense = float(trip.get("fuel_expense", 0) or 0)
-            repair_expense = float(trip.get("repair_expense", 0) or 0)
-            
+            collected_amount = float(trip.collected_amount or 0)
+            fuel_expense = float(trip.fuel_expense or 0) if hasattr(trip, 'fuel_expense') else 0
+            repair_expense = float(trip.repair_expense or 0)
+
             # Update totals
             total_collections += collected_amount
             total_fuel_expense += fuel_expense

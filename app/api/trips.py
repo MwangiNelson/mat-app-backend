@@ -1,15 +1,45 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from typing import List, Any, Optional
+from typing import List, Any, Optional, Dict
 import math
-from datetime import datetime, date, timedelta
+import json
+import logging
+from datetime import datetime, date, timedelta, timezone
 
-from app.core.db import supabase
+from app.models import get_db
+from app.models.models import Trip, Driver, Vehicle, User
 from app.core.security import get_current_active_user, check_admin_role
 from app.schemas.trips import TripCreate, TripUpdate, TripResponse, TripDetail, PaginatedResponse
+from app.schemas.user import ErrorResponse
 from app.core.utils import DateTimeEncoder, serialize_datetime
-import json
+from sqlalchemy.orm import Session
+from sqlalchemy import func, desc
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+def create_trip_error(status_code: int, message: str, error_type: str, details: Dict = None) -> HTTPException:
+    """Create standardized trip API error response"""
+    # Ensure message is a string
+    message = str(message)
+
+    error_response = ErrorResponse(
+        status="error",
+        code=status_code,
+        message=message,
+        details=details,
+        errors=[{"type": error_type, "message": message}]
+    )
+
+    # Convert datetime to string in ISO format
+    content = json.loads(
+        json.dumps(error_response.dict(), cls=DateTimeEncoder)
+    )
+
+    return HTTPException(
+        status_code=status_code,
+        detail=content
+    )
 
 def serialize_for_db(data):
     """
@@ -21,82 +51,103 @@ def serialize_for_db(data):
     return data
 
 @router.post("/", response_model=TripDetail)
-async def create_trip(trip_data: TripCreate, current_user = Depends(get_current_active_user)) -> Any:
+async def create_trip(
+    trip_data: TripCreate,
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+) -> Any:
     """
     Create a new trip.
     """
     try:
         # Check if vehicle exists
-        vehicle_response = supabase.table("vehicles").select("passenger_capacity, reg_no").eq("id", trip_data.vehicle_id).execute()
-        
-        if not vehicle_response.data:
-            raise HTTPException(
+        vehicle = db.query(Vehicle).filter(Vehicle.id == trip_data.vehicle_id).first()
+
+        if not vehicle:
+            raise create_trip_error(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Vehicle not found"
+                message="Vehicle not found. Please check the vehicle ID and try again.",
+                error_type="vehicle_not_found",
+                details={"vehicle_id": str(trip_data.vehicle_id)}
             )
-        
+
         # Check if driver exists
-        driver_response = supabase.table("drivers").select("name").eq("id", trip_data.driver_id).execute()
-        
-        if not driver_response.data:
-            raise HTTPException(
+        driver = db.query(Driver).filter(Driver.id == trip_data.driver_id).first()
+
+        if not driver:
+            raise create_trip_error(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Driver not found"
+                message="Driver not found. Please check the driver ID and try again.",
+                error_type="driver_not_found",
+                details={"driver_id": str(trip_data.driver_id)}
+            )
+
+        # Check if driver is active
+        if driver.status != "active":
+            raise create_trip_error(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Cannot assign trip to inactive driver. Please select an active driver.",
+                error_type="driver_inactive",
+                details={"driver_id": str(trip_data.driver_id), "driver_status": driver.status}
+            )
+
+        # Check if vehicle is active
+        if vehicle.status != "active":
+            raise create_trip_error(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Cannot assign trip to inactive vehicle. Please select an active vehicle.",
+                error_type="vehicle_inactive",
+                details={"vehicle_id": str(trip_data.vehicle_id), "vehicle_status": vehicle.status}
             )
         
 
-        route = None
-        
-        # # Get route information if route_id is provided
-        # if trip_data.route_id:
-        #     # Check if route exists and get fare amount
-        #     route_response = supabase.table("routes").select("*").eq("id", trip_data.route_id).execute()
-            
-        #     if not route_response.data:
-        #         raise HTTPException(
-        #             status_code=status.HTTP_404_NOT_FOUND,
-        #             detail="Route not found"
-        #         )
-            
-        #     # Calculate expected amount based on passenger count and fare
-        #     route_fare = route_response.data[0]["fare_amount"]
-        #     route = route_response.data[0].get("route")
-        #     origin = route_response.data[0].get("origin")
-        #     destination = route_response.data[0].get("destination")
-        
-        # Create trip with calculated expected amount
-        trip_dict = trip_data.dict()
-        
-        # collection_time is already compatible with the database schema
-        
-        # Serialize datetime objects for database
-        trip_dict = serialize_for_db(trip_dict)
-        
-        response = supabase.table("trips").insert(trip_dict).execute()
-        
-        if not response.data:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to create trip"
-            )
-        
-        # Enrich response with driver and vehicle information
-        trip_data = response.data[0]
-        
+        # Create new trip
+        new_trip = Trip(
+            driver_id=trip_data.driver_id,
+            vehicle_id=trip_data.vehicle_id,
+            collection_time=trip_data.collection_time,
+            route=trip_data.route,
+            notes=trip_data.notes,
+            collected_amount=trip_data.collected_amount or 0,
+            repair_expense=trip_data.repair_expense or 0.0,
+            created_by=current_user.user_id,  # Use current user, not from payload
+            status=trip_data.status or "completed"
+        )
+
+        db.add(new_trip)
+        db.commit()
+        db.refresh(new_trip)
+
+        # Return enriched trip data
         enriched_trip = {
-            **trip_data,
-            "driver_name": driver_response.data[0]["name"],
-            "vehicle_registration": vehicle_response.data[0]["reg_no"],
-            "route": route,
+            "id": str(new_trip.id),
+            "driver_id": str(new_trip.driver_id),
+            "vehicle_id": str(new_trip.vehicle_id),
+            "driver_name": driver.name,
+            "vehicle_registration": vehicle.reg_no,
+            "collection_time": new_trip.collection_time.isoformat() if new_trip.collection_time else None,
+            "route": new_trip.route,
+            "notes": new_trip.notes,
+            "collected_amount": new_trip.collected_amount,
+            "repair_expense": new_trip.repair_expense,
+            "created_by": str(new_trip.created_by),
+            "status": new_trip.status,
+            "created_at": new_trip.created_at.isoformat() if new_trip.created_at else None,
+            "updated_at": new_trip.updated_at.isoformat() if new_trip.updated_at else None,
         }
-        
+
         return enriched_trip
-    except HTTPException:
-        raise
+
+    except HTTPException as he:
+        raise he
     except Exception as e:
-        raise HTTPException(
+        db.rollback()
+        logger.error(f"Failed to create trip: {str(e)}")
+        raise create_trip_error(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error creating trip: {str(e)}"
+            message="Failed to create trip. Please try again later.",
+            error_type="trip_creation_failed",
+            details={"error": str(e)}
         )
 
 @router.get("/", response_model=PaginatedResponse[TripDetail])
@@ -108,100 +159,78 @@ async def get_trips(
     date: Optional[date] = None,
     page: int = Query(1, ge=1, description="Page number"),
     per_page: int = Query(20, ge=1, le=100, description="Items per page"),
-    current_user = Depends(get_current_active_user)
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
 ) -> Any:
     """
     Get all trips, with optional filtering and pagination.
     """
     try:
-        # Use optimized query with joins to fetch trips with related data in one query
-        # Build the select statement with joins
-        select_query = """
-            *,
-            vehicles!inner(reg_no),
-            drivers!inner(name)
-        """
-        
-        # Build base query for counting total records with joins
-        count_query = supabase.table("trips").select("*", count="exact")
-        
-        # Apply filters to count query
+        # Build base query with joins
+        query = db.query(Trip).join(Driver, Trip.driver_id == Driver.id).join(Vehicle, Trip.vehicle_id == Vehicle.id)
+
+        # Apply filters
         if vehicle_id:
-            count_query = count_query.eq("vehicle_id", vehicle_id)
-        
+            query = query.filter(Trip.vehicle_id == vehicle_id)
+
         if driver_id:
-            count_query = count_query.eq("driver_id", driver_id)
-        
+            query = query.filter(Trip.driver_id == driver_id)
+
         if route:
-            count_query = count_query.eq("route", route)
-        
+            query = query.filter(Trip.route.ilike(f"%{route}%"))  # Case-insensitive search
+
         if trip_status:
-            count_query = count_query.eq("status", trip_status)
-        
+            query = query.filter(Trip.status == trip_status)
+
         if date:
-            count_query = count_query.gte("collection_time", date.isoformat())
-            next_day = date + timedelta(days=1)
-            count_query = count_query.lt("collection_time", next_day.isoformat())
-        
-        # Get total count
-        count_response = count_query.execute()
-        total = count_response.count
-        
+            # Filter by date range (from start of date to end of date)
+            start_datetime = datetime.combine(date, datetime.min.time())
+            end_datetime = datetime.combine(date, datetime.max.time())
+            query = query.filter(Trip.collection_time >= start_datetime, Trip.collection_time <= end_datetime)
+
+        # Get total count for pagination
+        total = query.count()
+
         # Calculate pagination values
         total_pages = math.ceil(total / per_page) if total > 0 else 1
         offset = (page - 1) * per_page
-        
-        # Build query for actual data with joins
-        query = supabase.table("trips").select(select_query)
-        
-        # Apply same filters to data query
-        if vehicle_id:
-            query = query.eq("vehicle_id", vehicle_id)
-        
-        if driver_id:
-            query = query.eq("driver_id", driver_id)
-        
-        if route:
-            query = query.eq("route", route)
-        
-        if trip_status:
-            query = query.eq("status", trip_status)
-        
-        if date:
-            query = query.gte("collection_time", date.isoformat())
-            next_day = date + timedelta(days=1)
-            query = query.lt("collection_time", next_day.isoformat())
-        
-        # Apply pagination and ordering
-        response = query.order("collection_time", desc=True).range(offset, offset + per_page - 1).execute()
-        
-        # Process trips data - the joins will include the related data
+
+        # Apply ordering and pagination
+        trips = query.order_by(desc(Trip.collection_time)).offset(offset).limit(per_page).all()
+
+        # Process trips data with enriched information
         enriched_trips = []
-        for trip in response.data:
-            # Extract vehicle and driver info from the joined data
-            vehicle_data = trip.get("vehicles", {})
-            driver_data = trip.get("drivers", {})
-            
+        for trip in trips:
             # Create enriched trip object
             enriched_trip = {
-                **{k: v for k, v in trip.items() if k not in ["vehicles", "drivers"]},  # Exclude join objects
-                "driver_name": driver_data.get("name"),
-                "vehicle_registration": vehicle_data.get("reg_no"),
-                "route": None,  # These fields are in TripDetail but we're not populating them here
-                "route_text": trip.get("route_text"),  # Include route_text in response
-                "origin": None,
-                "destination": None,
-                "fare_amount": None
+                "id": str(trip.id),
+                "driver_id": str(trip.driver_id),
+                "vehicle_id": str(trip.vehicle_id),
+                "driver_name": trip.driver.name,
+                "vehicle_registration": trip.vehicle.reg_no,
+                "collection_time": trip.collection_time.isoformat() if trip.collection_time else None,
+                "route": trip.route,
+                "notes": trip.notes,
+                "collected_amount": float(trip.collected_amount),
+                "repair_expense": float(trip.repair_expense) if trip.repair_expense else 0.0,
+                "created_by": str(trip.created_by),
+                "status": trip.status,
+                "created_at": trip.created_at.isoformat() if trip.created_at else None,
+                "updated_at": trip.updated_at.isoformat() if trip.updated_at else None,
+                # Additional fields for TripDetail schema
+                "route_text": trip.route,  # Using route as route_text
+                "origin": None,  # Not available in current schema
+                "destination": None,  # Not available in current schema
+                "fare_amount": None  # Not available in current schema
             }
-            
-            # Split collection_time into date and time fields
-            if "collection_time" in trip and trip["collection_time"]:
-                dt_obj = datetime.fromisoformat(trip["collection_time"].replace('Z', '+00:00'))
-                enriched_trip["collection_date"] = dt_obj.strftime("%Y-%m-%d") 
-                enriched_trip["collection_time_only"] = dt_obj.strftime("%H:%M:%S")
-            
+
+            # Split collection_time into date and time fields if available
+            if trip.collection_time:
+                enriched_trip["collection_date"] = trip.collection_time.strftime("%Y-%m-%d")
+                enriched_trip["collection_time_only"] = trip.collection_time.strftime("%H:%M:%S")
+
             enriched_trips.append(enriched_trip)
-        
+
         # Create pagination metadata
         pagination_meta = {
             "page": page,
@@ -211,54 +240,81 @@ async def get_trips(
             "has_next": page < total_pages,
             "has_prev": page > 1
         }
-        
+
         return {
             "data": enriched_trips,
             "meta": pagination_meta
         }
+
     except Exception as e:
-        raise HTTPException(
+        logger.error(f"Failed to retrieve trips: {str(e)}")
+        raise create_trip_error(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error fetching trips: {str(e)}"
+            message="Failed to retrieve trips. Please try again later.",
+            error_type="trips_retrieval_failed",
+            details={"error": str(e)}
         )
 
 @router.get("/{trip_id}", response_model=TripDetail)
-async def get_trip_detail(trip_id: str, current_user = Depends(get_current_active_user)) -> Any:
+async def get_trip_detail(
+    trip_id: str,
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+) -> Any:
     """
     Get detailed information about a specific trip.
     """
     try:
-        # Call database function to get trip details
-        response = supabase.rpc('get_trip_detail', {'trip_id': trip_id}).execute()
-        
-        if not response.data:
-            raise HTTPException(
+        # Query trip with joined driver and vehicle information
+        trip = db.query(Trip).join(Driver, Trip.driver_id == Driver.id).join(Vehicle, Trip.vehicle_id == Vehicle.id).filter(Trip.id == trip_id).first()
+
+        if not trip:
+            raise create_trip_error(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Trip not found"
+                message="Trip not found. Please check the trip ID and try again.",
+                error_type="trip_not_found",
+                details={"trip_id": trip_id}
             )
-        
-        trip_data = response.data[0]
-        
-        # Ensure route_text is included in the response
-        if "route_text" not in trip_data and trip_data.get("route_text") is None:
-            # Fallback to fetch from database if needed
-            trip_raw = supabase.table("trips").select("route_text").eq("id", trip_id).execute()
-            if trip_raw.data:
-                trip_data["route_text"] = trip_raw.data[0].get("route_text")
-        
-        # Split collection_time into date and time fields
-        if "collection_time" in trip_data and trip_data["collection_time"]:
-            dt_obj = datetime.fromisoformat(trip_data["collection_time"].replace('Z', '+00:00'))
-            trip_data["collection_date"] = dt_obj.strftime("%Y-%m-%d")
-            trip_data["collection_time_only"] = dt_obj.strftime("%H:%M:%S")
-        
-        return trip_data
-    except HTTPException:
-        raise
+
+        # Build detailed trip response
+        trip_detail = {
+            "id": str(trip.id),
+            "driver_id": str(trip.driver_id),
+            "vehicle_id": str(trip.vehicle_id),
+            "driver_name": trip.driver.name,
+            "vehicle_registration": trip.vehicle.reg_no,
+            "collection_time": trip.collection_time.isoformat() if trip.collection_time else None,
+            "route": trip.route,
+            "route_text": trip.route,  # Using route as route_text
+            "notes": trip.notes,
+            "collected_amount": float(trip.collected_amount),
+            "repair_expense": float(trip.repair_expense) if trip.repair_expense else 0.0,
+            "created_by": str(trip.created_by),
+            "status": trip.status,
+            "created_at": trip.created_at.isoformat() if trip.created_at else None,
+            "updated_at": trip.updated_at.isoformat() if trip.updated_at else None,
+            # Additional fields for compatibility
+            "origin": None,  # Not available in current schema
+            "destination": None,  # Not available in current schema
+            "fare_amount": None  # Not available in current schema
+        }
+
+        # Split collection_time into date and time fields if available
+        if trip.collection_time:
+            trip_detail["collection_date"] = trip.collection_time.strftime("%Y-%m-%d")
+            trip_detail["collection_time_only"] = trip.collection_time.strftime("%H:%M:%S")
+
+        return trip_detail
+
+    except HTTPException as he:
+        raise he
     except Exception as e:
-        raise HTTPException(
+        logger.error(f"Failed to retrieve trip detail for {trip_id}: {str(e)}")
+        raise create_trip_error(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error fetching trip details: {str(e)}"
+            message="Failed to retrieve trip details. Please try again later.",
+            error_type="trip_detail_retrieval_failed",
+            details={"trip_id": trip_id, "error": str(e)}
         )
 
 @router.put("/{trip_id}", response_model=TripDetail)

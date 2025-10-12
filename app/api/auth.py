@@ -4,7 +4,11 @@ from fastapi.responses import JSONResponse
 from datetime import timedelta, datetime
 from typing import Any, Dict, List
 
-from app.core.db import supabase
+# from app.core.db import supabase  # Removed Supabase dependency
+from app.models import get_db  # Add SQLAlchemy dependency
+from app.models.models import User, PasswordResetToken  # Add User and PasswordResetToken models
+from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from app.core.security import (
     create_access_token, 
     create_refresh_token, 
@@ -17,18 +21,26 @@ from app.core.security import (
 )
 from app.core.config import settings
 from app.schemas.user import (
-    UserCreate, 
-    UserResponse, 
-    UserUpdate, 
-    Token, 
+    UserCreate,
+    UserResponse,
+    UserUpdate,
+    Token,
     RefreshToken,
     TokenPayload,
     LoginRequest,
+    PasswordResetRequest,
+    PasswordResetConfirm,
     ErrorResponse
 )
 from app.core.utils import DateTimeEncoder
+from app.core.email import email_service
 import json
+import secrets
+import logging
+from datetime import timezone
 from jose import jwt
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -56,180 +68,131 @@ def create_auth_error(status_code: int, message: str, error_type: str, details: 
     )
 
 @router.post("/register", response_model=UserResponse)
-async def register(user_in: UserCreate) -> Any:
+async def register(user_in: UserCreate, db: Session = Depends(get_db)) -> Any:
     """
     Register a new user.
     """
     # Check if user already exists
-    user_data = supabase.table("users").select("*").eq("email", user_in.email).execute()
-    if user_data.data:
+    existing_user = db.query(User).filter(User.email == user_in.email).first()
+    if existing_user:
         raise create_auth_error(
             status_code=status.HTTP_409_CONFLICT,
             message="An account with this email already exists. Please use a different email or login instead.",
             error_type="account_exists",
             details={"email": user_in.email}
         )
-    
+
     # Validate password strength
     if len(user_in.password) < 8:
         raise create_auth_error(
-            status_code=status.HTTP_400_BAD_REQUEST, 
+            status_code=status.HTTP_400_BAD_REQUEST,
             message="Password must be at least 8 characters long",
             error_type="invalid_password"
         )
-    
-    # Create user in Supabase Auth
+
+    # Create user in local database
     try:
-        auth_user = supabase.auth.sign_up({
-            "email": user_in.email,
-            "password": user_in.password
-        })
-        
-        user_id = auth_user.user.id
-        
-        # Create user in users table
-        user_data = {
-            "id": user_id,
-            "full_name": user_in.full_name,
-            "email": user_in.email,
-            "role": user_in.role,
-            "phone": user_in.phone
-        }
-        
-        response = supabase.table("users").insert(user_data).execute()
-        
-        if not response.data:
-            # If users table insertion fails, we should handle this case (could clean up auth user)
-            raise create_auth_error(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="There was a problem creating your account. Please try again later.",
-                error_type="profile_creation_failed"
-            )
-        
-        return response.data[0]
-    
+        # Hash the password
+        hashed_password = get_password_hash(user_in.password)
+
+        # Create new user
+        new_user = User(
+            full_name=user_in.full_name,
+            email=user_in.email,
+            password_hash=hashed_password,
+            role=user_in.role,
+            phone=user_in.phone
+        )
+
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+
+        return UserResponse(
+            id=str(new_user.id),
+            full_name=new_user.full_name,
+            email=new_user.email,
+            role=new_user.role,
+            phone=new_user.phone,
+            created_at=new_user.created_at,
+            updated_at=new_user.updated_at
+        )
+
+    except IntegrityError as e:
+        db.rollback()
+        raise create_auth_error(
+            status_code=status.HTTP_409_CONFLICT,
+            message="An account with this email already exists.",
+            error_type="account_exists",
+            details={"email": user_in.email}
+        )
     except Exception as e:
-        error_message = str(e)
-        
-        # Handle common Supabase auth errors
-        if "already registered" in error_message.lower():
-            raise create_auth_error(
-                status_code=status.HTTP_409_CONFLICT,
-                message="This email is already registered. Please use a different email or login instead.",
-                error_type="account_exists", 
-                details={"email": user_in.email}
-            )
-        elif "password" in error_message.lower():
-            raise create_auth_error(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                message="Your password doesn't meet the security requirements. Please choose a stronger password.",
-                error_type="invalid_password"
-            )
-        elif "email" in error_message.lower():
-            raise create_auth_error(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                message="Please enter a valid email address.",
-                error_type="invalid_email",
-                details={"email": user_in.email}
-            )
-        
-        # Generic error
+        db.rollback()
         raise create_auth_error(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             message="Registration failed. Please try again later.",
             error_type="registration_failed",
-            details={"error": error_message}
+            details={"error": str(e)}
         )
 
 @router.post("/login", response_model=Token, operation_id="login")
-async def login(login_data: LoginRequest) -> Any:
+async def login(login_data: LoginRequest, db: Session = Depends(get_db)) -> Any:
     """
     Login with email and password to get access token.
-    
+
     Returns a token object containing:
     - access_token: JWT token for API access
     - refresh_token: Token to get new access tokens
     - token_type: Type of token (bearer)
     """
     try:
-        # First check if user exists in our database
-        user_check = supabase.table("users").select("*").eq("email", login_data.email).execute()
-        if not user_check.data:
+        # Check if user exists in our database
+        user = db.query(User).filter(User.email == login_data.email).first()
+
+        # Verify password (only if user exists and has a valid password hash)
+        if not user or not user.password_hash:
+            # Generic error message for security - don't reveal if account exists
             raise create_auth_error(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                message="No account found with this email address. Please register first.",
-                error_type="account_not_found",
-                details={"email": login_data.email}
+                message="Invalid email or password. Please try again.",
+                error_type="invalid_credentials"
             )
 
-        # Attempt to authenticate with Supabase
+        # Verify password with error handling
         try:
-            auth_response = supabase.auth.sign_in_with_password({
-                "email": login_data.email,
-                "password": login_data.password
-            })
-        except Exception as auth_error:
-            error_message = str(auth_error).lower()
-            
-            # Handle specific authentication errors
-            if "invalid login" in error_message or "invalid credentials" in error_message:
+            password_valid = verify_password(login_data.password, user.password_hash)
+            if not password_valid:
                 raise create_auth_error(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    message="Incorrect email or password. Please try again.",
+                    message="Invalid email or password. Please try again.",
                     error_type="invalid_credentials"
                 )
-            elif "not confirmed" in error_message:
-                raise create_auth_error(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    message="Your email address has not been verified. Please check your inbox for a verification email and follow the instructions.",
-                    error_type="email_not_verified"
-                )
-            elif "too many requests" in error_message:
-                raise create_auth_error(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    message="Too many login attempts. For security reasons, please wait a few minutes before trying again.",
-                    error_type="rate_limited"
-                )
-            
-            # Generic authentication error
+        except Exception as password_error:
+            # Handle corrupted hash or other password verification errors
+            logger.error(f"Password verification error for user {login_data.email}: {str(password_error)}")
             raise create_auth_error(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                message="Login failed. Please check your credentials and try again.",
-                error_type="authentication_failed", 
-                details={"error": error_message}
+                message="Invalid email or password. Please try again.",
+                error_type="invalid_credentials"
             )
-        
-        user_id = auth_response.user.id
-        
-        # Get user from database to check role
-        user_data = supabase.table("users").select("*").eq("id", user_id).execute()
-        
-        if not user_data.data:
-            raise create_auth_error(
-                status_code=status.HTTP_404_NOT_FOUND,
-                message="Your account exists but your profile is missing. Please contact support.",
-                error_type="profile_not_found"
-            )
-        
-        user = user_data.data[0]
-        
+
         # Create JWT tokens
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
-            data={"sub": user_id, "role": user["role"]},
+            data={"sub": str(user.id), "role": user.role},
             expires_delta=access_token_expires,
         )
-        
+
         refresh_token = create_refresh_token(
-            data={"sub": user_id, "role": user["role"]}
+            data={"sub": str(user.id), "role": user.role}
         )
-        
+
         return {
             "access_token": access_token,
             "refresh_token": refresh_token,
             "token_type": "bearer",
         }
-    
+
     except HTTPException as he:
         raise he
     except Exception as e:
@@ -274,114 +237,225 @@ async def refresh_token(refresh_token: RefreshToken) -> Any:
         )
 
 @router.post("/forgot-password")
-async def forgot_password(email: str) -> Any:
+async def forgot_password(request: PasswordResetRequest, db: Session = Depends(get_db)) -> Any:
     """
-    Send password reset email.
+    Request password reset by generating a token and sending email.
+    Always returns success for security reasons, regardless of whether email exists.
     """
     try:
-        # Check if user exists first
-        user_check = supabase.table("users").select("id").eq("email", email).execute()
-        if not user_check.data:
-            # For security reasons, still return success even if email doesn't exist
-            return {"message": "If your email is registered, you will receive a password reset link shortly."}
-            
-        supabase.auth.reset_password_email(email)
-        return {"message": "If your email is registered, you will receive a password reset link shortly."}
+        # Check if user exists
+        user = db.query(User).filter(User.email == request.email).first()
+
+        if user:
+            # Generate a simple 6-digit reset code
+            reset_token = f"{secrets.randbelow(900000) + 100000:06d}"
+
+            # Calculate expiration time
+            expires_at = datetime.utcnow() + timedelta(hours=settings.EMAIL_RESET_TOKEN_EXPIRE_HOURS)
+
+            # Create password reset token record
+            reset_token_record = PasswordResetToken(
+                user_id=user.id,
+                token=reset_token,
+                expires_at=expires_at
+            )
+
+            db.add(reset_token_record)
+            db.commit()
+
+            # Try to send email (but don't fail if email fails)
+            email_sent = await email_service.send_password_reset_email(
+                email_to=user.email,
+                reset_token=reset_token
+            )
+
+            if not email_sent:
+                # Log that email failed but continue (token is still stored)
+                # User can manually enter the token
+                pass  # Email service already logs the error
+
+        # Always return success for security reasons
+        return {
+            "message": "If your email is registered, you will receive a password reset code shortly. Please check your email.",
+            "note": "If you don't receive an email, you can manually enter the 6-digit reset code that was generated."
+        }
+
     except Exception as e:
-        raise create_auth_error(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            message="We couldn't send a reset email at this time. Please try again later or contact support.",
-            error_type="reset_email_failed",
-            details={"error": str(e)}
-        )
+        # Log the error but still return success for security
+        # Don't reveal whether the email exists or not
+        return {
+            "message": "If your email is registered, you will receive a password reset code shortly. Please check your email.",
+            "note": "If you don't receive an email, you can manually enter the 6-digit reset code that was generated."
+        }
 
 @router.post("/reset-password")
-async def reset_password(new_password: str, token: str) -> Any:
+async def reset_password(request: PasswordResetConfirm, db: Session = Depends(get_db)) -> Any:
     """
-    Reset password with token.
+    Reset password using a valid 6-digit reset code.
+    No authentication required - uses email + token validation.
     """
     try:
         # Validate password strength
-        if len(new_password) < 8:
+        if len(request.new_password) < 8:
             raise create_auth_error(
-                status_code=status.HTTP_400_BAD_REQUEST, 
+                status_code=status.HTTP_400_BAD_REQUEST,
                 message="Your new password must be at least 8 characters long",
                 error_type="invalid_password"
             )
-            
-        supabase.auth.update_user(
-            {
-                "password": new_password
-            }
-        )
-        return {"message": "Your password has been updated successfully. You can now log in with your new password."}
-    except Exception as e:
-        error_message = str(e).lower()
-        
-        if "token" in error_message:
-            raise create_auth_error(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                message="Your password reset link has expired or is invalid. Please request a new one.",
-                error_type="invalid_reset_token"
-            )
-        elif "password" in error_message:
+
+        # Find the reset token
+        reset_token_record = db.query(PasswordResetToken).filter(
+            PasswordResetToken.token == request.token
+        ).first()
+
+        if not reset_token_record:
             raise create_auth_error(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                message="Your password doesn't meet the security requirements. Please choose a stronger password.",
-                error_type="invalid_password"
-            )
-        else:
-            raise create_auth_error(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                message="We couldn't reset your password. Please try again or request a new reset link.",
-                error_type="password_reset_failed",
-                details={"error": str(e)}
+                message="Invalid or expired reset code. Please request a new password reset.",
+                error_type="invalid_token"
             )
 
+        # Check if token has expired (use timezone-aware datetime)
+        current_time = datetime.now(timezone.utc)
+        if current_time > reset_token_record.expires_at:
+            raise create_auth_error(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Reset code has expired. Please request a new password reset.",
+                error_type="expired_token"
+            )
+
+        # Check if token has already been used
+        if reset_token_record.used_at is not None:
+            raise create_auth_error(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="Reset code has already been used. Please request a new password reset.",
+                error_type="used_token"
+            )
+
+        # Get the user and verify email matches
+        user = db.query(User).filter(User.id == reset_token_record.user_id).first()
+        if not user:
+            raise create_auth_error(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="User not found. Please request a new password reset.",
+                error_type="user_not_found"
+            )
+
+        # Verify the email matches the user associated with the token
+        if user.email.lower() != request.email.lower():
+            raise create_auth_error(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="The reset code doesn't match this email address. Please check your email and try again.",
+                error_type="email_mismatch"
+            )
+
+        # Hash the new password
+        hashed_password = get_password_hash(request.new_password)
+
+        # Update user's password
+        user.password_hash = hashed_password
+        user.updated_at = datetime.now(timezone.utc)
+
+        # Mark token as used
+        reset_token_record.used_at = datetime.now(timezone.utc)
+
+        # Commit changes
+        db.commit()
+
+        return {
+            "message": "Password has been successfully reset. You can now log in with your new password.",
+            "email": request.email
+        }
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        db.rollback()
+        raise create_auth_error(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="We couldn't reset your password. Please try again or request a new reset link.",
+            error_type="password_reset_failed",
+            details={"error": str(e)}
+        )
+
 @router.get("/me", response_model=UserResponse)
-async def get_current_user_info(current_user = Depends(get_current_active_user)) -> Any:
+async def get_current_user_info(current_user = Depends(get_current_active_user), db: Session = Depends(get_db)) -> Any:
     """
     Get current user info.
     """
-    user_data = supabase.table("users").select("*").eq("id", current_user.user_id).execute()
-    
-    if not user_data.data:
+    user = db.query(User).filter(User.id == current_user.user_id).first()
+
+    if not user:
         raise create_auth_error(
             status_code=status.HTTP_404_NOT_FOUND,
             message="User not found",
             error_type="user_not_found"
         )
-    
-    return user_data.data[0]
+
+    return UserResponse(
+        id=str(user.id),
+        full_name=user.full_name,
+        email=user.email,
+        role=user.role,
+        phone=user.phone,
+        created_at=user.created_at,
+        updated_at=user.updated_at
+    )
 
 @router.put("/me", response_model=UserResponse)
 async def update_current_user_info(
     user_update: UserUpdate,
-    current_user = Depends(get_current_active_user)
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
 ) -> Any:
     """
     Update current user info.
     """
     # Filter out None values
     update_data = {k: v for k, v in user_update.dict().items() if v is not None}
-    
+
     if not update_data:
         raise create_auth_error(
             status_code=status.HTTP_400_BAD_REQUEST,
             message="No fields to update",
             error_type="no_update_data"
         )
-    
-    response = supabase.table("users").update(update_data).eq("id", current_user.user_id).execute()
-    
-    if not response.data:
+
+    # Get user
+    user = db.query(User).filter(User.id == current_user.user_id).first()
+    if not user:
         raise create_auth_error(
             status_code=status.HTTP_404_NOT_FOUND,
-            message="User not found or nothing to update",
-            error_type="update_failed"
+            message="User not found",
+            error_type="user_not_found"
         )
-    
-    return response.data[0]
+
+    # Update user fields
+    for field, value in update_data.items():
+        if hasattr(user, field):
+            setattr(user, field, value)
+
+    try:
+        db.commit()
+        db.refresh(user)
+
+        return UserResponse(
+            id=str(user.id),
+            full_name=user.full_name,
+            email=user.email,
+            role=user.role,
+            phone=user.phone,
+            created_at=user.created_at,
+            updated_at=user.updated_at
+        )
+    except Exception as e:
+        db.rollback()
+        raise create_auth_error(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            message="Failed to update user information",
+            error_type="update_failed",
+            details={"error": str(e)}
+        )
 
 @router.get("/test-auth")
 async def test_auth(current_user = Depends(get_current_active_user)) -> dict:

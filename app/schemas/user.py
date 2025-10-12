@@ -69,18 +69,60 @@ class LoginRequest(BaseModel):
     Login credentials schema
     Used for /api/auth/login endpoint
     """
-    email: EmailStr = Field(..., 
-                          description="User's email address", 
+    email: EmailStr = Field(...,
+                          description="User's email address",
                           example="user@example.com")
-    password: str = Field(..., 
-                        description="User's password", 
-                        example="password123", 
+    password: str = Field(...,
+                        description="User's password",
+                        example="password123",
                         min_length=8)
-                        
+
     class Config:
         schema_extra = {
             "example": {
                 "email": "user@example.com",
                 "password": "strongpassword123"
+            }
+        }
+
+class PasswordResetRequest(BaseModel):
+    """
+    Password reset request schema
+    Used for requesting a password reset
+    """
+    email: EmailStr = Field(...,
+                          description="User's email address for password reset",
+                          example="user@example.com")
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "email": "user@example.com"
+            }
+        }
+
+class PasswordResetConfirm(BaseModel):
+    """
+    Password reset confirmation schema
+    Used for resetting password with 6-digit code
+    """
+    email: EmailStr = Field(...,
+                          description="User's email address",
+                          example="user@example.com")
+    token: str = Field(...,
+                     description="6-digit password reset code",
+                     example="123456",
+                     pattern=r"^\d{6}$")
+    new_password: str = Field(...,
+                            description="New password",
+                            min_length=8,
+                            example="newstrongpassword123")
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "email": "user@example.com",
+                "token": "123456",
+                "new_password": "newstrongpassword123"
             }
         } 
