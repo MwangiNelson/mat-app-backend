@@ -540,3 +540,5 @@ TypeError: fetch_trip_data() got an unexpected keyword argument 'driver_id'
 2025-10-13 00:48:21,113 - app.api.reports - INFO - Reports API logger initialized
 2025-10-13 00:49:04,342 - app.api.reports - INFO - Reports API logger initialized
 2025-10-13 00:49:50,310 - app.api.reports - INFO - Reports API logger initialized
+2025-10-14 17:03:46,176 - app.api.reports - INFO - Reports API logger initialized
+2025-10-14 17:59:19,643 - app.api.reports - INFO - Reports API logger initialized
