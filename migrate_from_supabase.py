@@ -35,13 +35,14 @@ def create_schema(cursor):
     -- Enable the UUID extension
     CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
-    -- Users table (modified for local PostgreSQL - no auth.users reference)
+    -- Users table (matching app/models/models.py)
     CREATE TABLE IF NOT EXISTS users (
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
         full_name TEXT NOT NULL,
-        role TEXT NOT NULL CHECK (role IN ('admin', 'manager', 'staff')),
+        role TEXT NOT NULL,
         phone TEXT,
         email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
@@ -61,53 +62,51 @@ def create_schema(cursor):
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
 
-    -- Vehicles table
+    -- Vehicles table (matching app/models/models.py)
     CREATE TABLE IF NOT EXISTS vehicles (
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-        registration TEXT UNIQUE NOT NULL,
+        reg_no TEXT UNIQUE NOT NULL,
         model TEXT NOT NULL,
-        owner TEXT NOT NULL,
-        status TEXT NOT NULL CHECK (status IN ('active', 'maintenance', 'inactive')),
+        owner TEXT DEFAULT 'NO_OWNER_RECORDED',
+        status TEXT NOT NULL DEFAULT 'active',
         insurance_expiry DATE NOT NULL,
         tlb_expiry DATE NOT NULL,
-        passenger_capacity INT,
-        route_id UUID REFERENCES routes(id) NULL,
+        passenger_capacity NUMERIC DEFAULT 14,
+        inspection_expiry DATE,
+        speed_governor_expiry DATE NOT NULL DEFAULT NOW(),
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
 
-    -- Drivers table
+    -- Drivers table (matching app/models/models.py)
     CREATE TABLE IF NOT EXISTS drivers (
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
         name TEXT NOT NULL,
         license_no TEXT UNIQUE NOT NULL,
         phone TEXT NOT NULL,
-        status TEXT NOT NULL CHECK (status IN ('active', 'inactive')),
+        status TEXT NOT NULL DEFAULT 'active',
         experience TEXT,
         rating NUMERIC(3,1) DEFAULT 0.0,
         photo_url TEXT,
+        cancelled BOOLEAN NOT NULL DEFAULT FALSE,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
 
-    -- Trips table for individual journeys (route_id made nullable to match actual data)
+    -- Trips table (matching app/models/models.py)
     CREATE TABLE IF NOT EXISTS trips (
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-        vehicle_id UUID NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
-        driver_id UUID NOT NULL REFERENCES drivers(id) ON DELETE CASCADE,
-        route_id UUID NULL REFERENCES routes(id) ON DELETE CASCADE, -- Made nullable to match Supabase data
-        start_time TIMESTAMP WITH TIME ZONE NOT NULL,
-        end_time TIMESTAMP WITH TIME ZONE,
-        passenger_count INT NOT NULL DEFAULT 0,
-        expected_amount DECIMAL(10, 2) NOT NULL, -- calculated based on passenger_count * route fare
-        collected_amount DECIMAL(10, 2), -- actual amount collected, may differ from expected
-        fuel_cost DECIMAL(10, 2) DEFAULT 0,
-        other_expenses DECIMAL(10, 2) DEFAULT 0,
-        expenses_notes TEXT,
-        status VARCHAR(20) NOT NULL DEFAULT 'in_progress', -- in_progress, completed, cancelled
+        driver_id UUID REFERENCES drivers(id),
+        vehicle_id UUID REFERENCES vehicles(id),
+        collection_time TIMESTAMP WITH TIME ZONE,
+        route TEXT,
         notes TEXT,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        collected_amount INTEGER NOT NULL DEFAULT 0,
+        repair_expense NUMERIC DEFAULT 0,
+        created_by UUID NOT NULL REFERENCES users(id),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        status TEXT NOT NULL
     );
 
     -- Location tracking table
@@ -136,6 +135,26 @@ def create_schema(cursor):
         UNIQUE(vehicle_id, date)
     );
 
+    -- Password reset tokens table
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        user_id UUID NOT NULL REFERENCES users(id),
+        token TEXT UNIQUE NOT NULL,
+        expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+        used_at TIMESTAMP WITH TIME ZONE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+
+    -- Deficits table
+    CREATE TABLE IF NOT EXISTS deficits (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+        driver UUID NOT NULL REFERENCES drivers(id),
+        vehicle UUID NOT NULL REFERENCES vehicles(id),
+        amount INTEGER NOT NULL DEFAULT 0,
+        deficit_type TEXT NOT NULL DEFAULT 'deficit'
+    );
+
     -- Create indexes for better query performance
     CREATE INDEX IF NOT EXISTS idx_vehicles_status ON vehicles(status);
     CREATE INDEX IF NOT EXISTS idx_drivers_status ON drivers(status);
@@ -143,6 +162,8 @@ def create_schema(cursor):
     CREATE INDEX IF NOT EXISTS idx_trips_driver_id ON trips(driver_id);
     CREATE INDEX IF NOT EXISTS idx_trips_vehicle_id ON trips(vehicle_id);
     CREATE INDEX IF NOT EXISTS idx_trips_status ON trips(status);
+    CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_token ON password_reset_tokens(token);
+    CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id ON password_reset_tokens(user_id);
 
     -- Set up a function to update the updated_at timestamp
     CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -228,7 +249,15 @@ def migrate_table(supabase_client, local_cursor, local_conn, table_name, columns
 
         for i, row in enumerate(rows):
             try:
-                values = [row.get(col) for col in columns]
+                values = []
+                for col in columns:
+                    val = row.get(col)
+                    # Handle special cases for missing required fields
+                    if col == 'password_hash' and val is None:
+                        # Generate a default password hash for users without one
+                        val = "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPjYQmHqU5tO"  # Default: "password123"
+                    values.append(val)
+
                 local_cursor.execute(insert_sql, values)
                 # Commit each successful insert to avoid transaction abortion issues
                 local_conn.commit()
@@ -317,9 +346,17 @@ def get_fresh_connection():
         password=os.getenv("POSTGRES_PASSWORD", "D4Cheap1411!&")
     )
 
-def main():
+def main(reset_db=False):
     """Main migration function."""
     try:
+        if reset_db:
+            print("Resetting database...")
+            if reset_database():
+                print("Database reset successful.")
+            else:
+                print("Database reset failed.")
+                return
+
         # Connect to Supabase
         print("Connecting to Supabase...")
         supabase = get_supabase_client()
@@ -329,22 +366,21 @@ def main():
         local_conn = get_local_db_connection()
         local_cursor = local_conn.cursor()
 
-        # Note: Using CREATE TABLE IF NOT EXISTS instead of dropping tables
-        # to avoid transaction issues
-
         # Create schema
         create_schema(local_cursor)
         local_conn.commit()
 
-        # Define table columns for migration
+        # Define table columns for migration (matching app/models/models.py)
         table_columns = {
-            'users': ['id', 'full_name', 'role', 'phone', 'email', 'created_at', 'updated_at'],
+            'users': ['id', 'full_name', 'role', 'phone', 'email', 'password_hash', 'created_at', 'updated_at'],
             'routes': ['id', 'name', 'origin', 'destination', 'distance', 'estimated_duration', 'fare_amount', 'status', 'description', 'created_at', 'updated_at'],
-            'vehicles': ['id', 'registration', 'model', 'owner', 'status', 'insurance_expiry', 'tlb_expiry', 'passenger_capacity', 'route_id', 'created_at', 'updated_at'],
-            'drivers': ['id', 'name', 'license_no', 'phone', 'status', 'experience', 'rating', 'photo_url', 'created_at', 'updated_at'],
-            'trips': ['id', 'vehicle_id', 'driver_id', 'route_id', 'start_time', 'end_time', 'passenger_count', 'expected_amount', 'collected_amount', 'fuel_cost', 'other_expenses', 'expenses_notes', 'status', 'notes', 'created_at', 'updated_at'],
+            'vehicles': ['id', 'reg_no', 'model', 'owner', 'status', 'insurance_expiry', 'tlb_expiry', 'passenger_capacity', 'inspection_expiry', 'speed_governor_expiry', 'created_at', 'updated_at'],
+            'drivers': ['id', 'name', 'license_no', 'phone', 'status', 'experience', 'rating', 'photo_url', 'cancelled', 'created_at', 'updated_at'],
+            'trips': ['id', 'driver_id', 'vehicle_id', 'collection_time', 'route', 'notes', 'created_at', 'collected_amount', 'repair_expense', 'created_by', 'updated_at', 'status'],
             'locations': ['id', 'driver_id', 'latitude', 'longitude', 'timestamp'],
-            'daily_summaries': ['id', 'vehicle_id', 'driver_id', 'date', 'trip_count', 'total_passengers', 'total_expected_amount', 'total_collected_amount', 'total_expenses', 'net_profit', 'created_at', 'updated_at']
+            'daily_summaries': ['id', 'vehicle_id', 'driver_id', 'date', 'trip_count', 'total_passengers', 'total_expected_amount', 'total_collected_amount', 'total_expenses', 'net_profit', 'created_at', 'updated_at'],
+            'password_reset_tokens': ['id', 'user_id', 'token', 'expires_at', 'used_at', 'created_at'],
+            'deficits': ['id', 'created_at', 'driver', 'vehicle', 'amount', 'deficit_type']
         }
 
         # Migrate each table
@@ -372,7 +408,7 @@ def create_migration_summary():
             f.write("MIGRATION SUMMARY REPORT\n")
             f.write("=" * 50 + "\n\n")
 
-            tables = ['users', 'routes', 'vehicles', 'drivers', 'trips', 'locations', 'daily_summaries']
+            tables = ['users', 'routes', 'vehicles', 'drivers', 'trips', 'locations', 'daily_summaries', 'password_reset_tokens', 'deficits']
             total_original = 0
             total_migrated = 0
             total_errors = 0
@@ -412,4 +448,6 @@ def create_migration_summary():
         print(f"Error creating summary: {e}")
 
 if __name__ == "__main__":
-    main()
+    import sys
+    reset_db = "--reset" in sys.argv
+    main(reset_db=reset_db)
