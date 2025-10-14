@@ -223,10 +223,26 @@ def migrate_table(supabase_client, local_cursor, local_conn, table_name, columns
     error_file = f"migration_{table_name}_errors.txt"
 
     try:
-        # Fetch data from Supabase
-        response = supabase_client.table(table_name).select('*').execute()
-        rows = response.data
+        # Fetch all data from Supabase (handle pagination for large tables)
+        all_rows = []
+        offset = 0
+        limit = 1000  # Supabase default limit
 
+        while True:
+            response = supabase_client.table(table_name).select('*').range(offset, offset + limit - 1).execute()
+            rows = response.data
+
+            if not rows:
+                break
+
+            all_rows.extend(rows)
+            offset += limit
+
+            # Safety check to prevent infinite loops
+            if len(rows) < limit:
+                break
+
+        rows = all_rows
         total_rows = len(rows) if rows else 0
 
         if not rows:
