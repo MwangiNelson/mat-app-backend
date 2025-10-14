@@ -8,6 +8,7 @@ from datetime import datetime, date, timedelta, timezone
 from app.models import get_db
 from app.models.models import Trip, Driver, Vehicle, User
 from app.core.security import get_current_active_user, check_admin_role
+from app.core.cache import cached, invalidate_cache
 from app.schemas.trips import TripCreate, TripUpdate, TripResponse, TripDetail, PaginatedResponse
 from app.schemas.user import ErrorResponse
 from app.core.utils import DateTimeEncoder, serialize_datetime
@@ -51,6 +52,7 @@ def serialize_for_db(data):
     return data
 
 @router.post("/", response_model=TripDetail)
+@invalidate_cache("trips:*", "dashboard:*", "vehicles:*", "drivers:*")  # Clear multiple caches
 async def create_trip(
     trip_data: TripCreate,
     current_user = Depends(get_current_active_user),
@@ -151,6 +153,7 @@ async def create_trip(
         )
 
 @router.get("/", response_model=PaginatedResponse[TripDetail])
+@cached(ttl=300, key_prefix="trips")  # Cache for 5 minutes
 async def get_trips(
     vehicle_id: Optional[str] = None,
     driver_id: Optional[str] = None,
@@ -256,6 +259,7 @@ async def get_trips(
         )
 
 @router.get("/{trip_id}", response_model=TripDetail)
+@cached(ttl=300, key_prefix="trips")  # Cache for 5 minutes - individual trip details
 async def get_trip_detail(
     trip_id: str,
     current_user = Depends(get_current_active_user),
@@ -318,9 +322,10 @@ async def get_trip_detail(
         )
 
 @router.put("/{trip_id}", response_model=TripDetail)
+@invalidate_cache("trips:*", "dashboard:*", "vehicles:*", "drivers:*")  # Clear multiple caches
 async def update_trip(
-    trip_id: str, 
-    trip_update: TripUpdate, 
+    trip_id: str,
+    trip_update: TripUpdate,
     current_user = Depends(get_current_active_user)
 ) -> Any:
     """
@@ -445,6 +450,7 @@ async def update_trip(
         )
 
 @router.delete("/{trip_id}", status_code=status.HTTP_204_NO_CONTENT)
+@invalidate_cache("trips:*", "dashboard:*", "vehicles:*", "drivers:*")  # Clear multiple caches
 async def delete_trip(trip_id: str, current_user = Depends(check_admin_role)) -> None:
     """
     Delete a trip (admin only).

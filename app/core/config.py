@@ -54,6 +54,25 @@ class Settings(BaseSettings):
     EMAIL_RESET_TOKEN_EXPIRE_HOURS: int = int(os.getenv("EMAIL_RESET_TOKEN_EXPIRE_HOURS", "24"))
     EMAIL_TEMPLATES_DIR: str = "app/templates"
 
+    # Redis Configuration
+    REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
+    REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
+    REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
+    REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))
+    REDIS_SSL: bool = os.getenv("REDIS_SSL", "False").lower() == "true"
+
+    # Cache Configuration
+    CACHE_TTL: int = int(os.getenv("CACHE_TTL", "3600"))  # Default 1 hour
+    CACHE_PREFIX: str = os.getenv("CACHE_PREFIX", "matatu:")
+
+    # Redis URL for different connection methods
+    @property
+    def REDIS_URL(self) -> str:
+        """Redis URL for redis-py"""
+        password_part = f":{self.REDIS_PASSWORD}@" if self.REDIS_PASSWORD else ""
+        ssl_part = "?ssl=true" if self.REDIS_SSL else ""
+        return f"redis://redis{self.REDIS_DB}{password_part}{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}{ssl_part}"
+
     class Config:
         case_sensitive = True
 

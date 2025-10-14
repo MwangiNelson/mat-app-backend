@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta
 
 from app.core.db import supabase
 from app.core.security import get_current_user, get_current_active_user
+from app.core.cache import cached, invalidate_cache
 from app.schemas.operation import (
     OperationCreate,
     OperationUpdate,
@@ -19,6 +20,7 @@ import json
 router = APIRouter()
 
 @router.get("/", response_model=List[OperationResponse])
+@cached(ttl=300, key_prefix="operations")  # Cache for 5 minutes
 async def get_operations(
     current_user = Depends(get_current_user),
     skip: int = 0,
@@ -74,6 +76,7 @@ async def get_operations(
     return result
 
 @router.post("/", response_model=OperationResponse)
+@invalidate_cache("operations:*", "dashboard:*", "vehicles:*", "drivers:*")  # Clear multiple caches
 async def create_operation(
     operation_in: OperationCreate,
     current_user = Depends(get_current_active_user)
@@ -167,6 +170,7 @@ async def get_operation(
     return enriched_op
 
 @router.put("/{operation_id}", response_model=OperationResponse)
+@invalidate_cache("operations:*", "dashboard:*", "vehicles:*", "drivers:*")  # Clear multiple caches
 async def update_operation(
     operation_id: str,
     operation_in: OperationUpdate,
@@ -214,6 +218,7 @@ async def update_operation(
     return enriched_op
 
 @router.delete("/{operation_id}")
+@invalidate_cache("operations:*", "dashboard:*", "vehicles:*", "drivers:*")  # Clear multiple caches
 async def delete_operation(
     operation_id: str,
     current_user = Depends(get_current_active_user)
@@ -235,6 +240,7 @@ async def delete_operation(
     return {"message": "Operation deleted successfully"}
 
 @router.get("/summary", response_model=List[OperationSummary])
+@cached(ttl=600, key_prefix="operations")  # Cache for 10 minutes - summary data
 async def get_operations_summary(
     start_date: date = Query(..., description="Start date for summary"),
     end_date: date = Query(..., description="End date for summary"),
@@ -298,6 +304,7 @@ async def get_operations_summary(
     return result
 
 @router.get("/dashboard", response_model=DashboardStats)
+@cached(ttl=300, key_prefix="operations")  # Cache for 5 minutes - dashboard data
 async def get_dashboard_stats(current_user = Depends(get_current_user)) -> Any:
     """
     Get dashboard statistics.

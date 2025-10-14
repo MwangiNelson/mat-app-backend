@@ -5,6 +5,7 @@ from datetime import datetime, date, time, timedelta
 from app.models import get_db
 from app.models.models import Trip, Driver, Vehicle, DailySummary
 from app.core.security import get_current_active_user
+from app.core.cache import cached, invalidate_cache
 from app.schemas.dashboard import DashboardOverview, DashboardStats, VehiclePerformance, DriverPerformance, TimeSeriesData, CollectionTrend, DetailedVehiclePerformance, VehiclePerformanceList, DetailedDriverPerformance, DriverPerformanceList, PerformanceSummary
 from app.schemas.user import ErrorResponse
 from app.core.utils import DateTimeEncoder
@@ -207,6 +208,7 @@ def get_financial_overview(db: Session) -> Dict:
         raise e
 
 @router.get("/overview/finances", response_model=DashboardOverview)
+@cached(ttl=300, key_prefix="dashboard")  # Cache for 5 minutes
 async def get_financial_overview_endpoint(
     current_user = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -226,6 +228,7 @@ async def get_financial_overview_endpoint(
         )
 
 @router.get("/stats", response_model=DashboardStats)
+@cached(ttl=300, key_prefix="dashboard")  # Cache for 5 minutes
 async def get_dashboard_stats(
     days: int = 30,
     current_user = Depends(get_current_active_user),
@@ -414,6 +417,7 @@ async def get_dashboard_stats(
         )
 
 @router.get("/trends/collections", response_model=CollectionTrend)
+@cached(ttl=600, key_prefix="dashboard")  # Cache for 10 minutes - historical data
 async def get_collection_trends(
     start_date: Optional[str] = Query(None, description="Start date for trend data (DD-MM-YYYY)"),
     end_date: Optional[str] = Query(None, description="End date for trend data (DD-MM-YYYY)"),
@@ -555,6 +559,7 @@ async def get_collection_trends(
         )
 
 @router.get("/performance/vehicles", response_model=VehiclePerformanceList)
+@cached(ttl=600, key_prefix="dashboard")  # Cache for 10 minutes - performance data
 async def get_vehicle_performance(
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
@@ -901,6 +906,7 @@ async def get_vehicle_detail_performance(
         )
 
 @router.get("/performance/drivers", response_model=DriverPerformanceList)
+@cached(ttl=600, key_prefix="dashboard")  # Cache for 10 minutes - performance data
 async def get_driver_performance(
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
@@ -1265,6 +1271,7 @@ async def get_driver_detail_performance(
         )
 
 @router.get("/performance/summary", response_model=PerformanceSummary)
+@cached(ttl=300, key_prefix="dashboard")  # Cache for 5 minutes - summary data
 async def get_performance_summary(
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),

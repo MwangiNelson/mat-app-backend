@@ -4,10 +4,11 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from app.api import auth, vehicles, routes, drivers, trips, dashboard, reports, deficits
+from app.api import auth, vehicles, routes, drivers, trips, dashboard, reports, deficits, health
 from app.schemas.user import ErrorResponse
 from app.core.utils import DateTimeEncoder
 from app.core.config import settings
+from app.core.redis import close_redis_client
 import json
 import os
 from datetime import datetime
@@ -196,6 +197,13 @@ app.include_router(trips.router, prefix="/api/trips", tags=["Trips"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
 app.include_router(reports.router, prefix="/api/reports", tags=["Reports"])
 app.include_router(deficits.router, prefix="/api/deficits", tags=["Deficits"])
+app.include_router(health.router, prefix="/api/health", tags=["Health"])
+
+# Shutdown event handler
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Clean up resources on shutdown"""
+    await close_redis_client()
 
 @app.get("/")
 async def root():

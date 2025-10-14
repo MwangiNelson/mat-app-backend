@@ -6,6 +6,7 @@ import json
 from app.models import get_db
 from app.models.models import Vehicle, Trip, Deficit, DailySummary
 from app.core.security import get_current_user, check_admin_role
+from app.core.cache import cached, invalidate_cache
 from app.schemas.vehicle import (
     VehicleCreate,
     VehicleUpdate,
@@ -92,6 +93,7 @@ async def get_expiring_vehicles(
         )
 
 @router.get("/", response_model=List[VehicleResponse])
+@cached(ttl=300, key_prefix="vehicles")  # Cache for 5 minutes
 async def get_vehicles(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -143,6 +145,7 @@ async def get_vehicles(
         )
 
 @router.post("/", response_model=VehicleResponse)
+@invalidate_cache("vehicles:*")  # Clear all vehicle caches when creating
 async def create_vehicle(
     vehicle_in: VehicleCreate,
     current_user = Depends(check_admin_role),
@@ -271,6 +274,7 @@ async def get_vehicle(
         )
 
 @router.put("/{vehicle_id}", response_model=VehicleResponse)
+@invalidate_cache("vehicles:*")  # Clear all vehicle caches when updating
 async def update_vehicle(
     vehicle_id: str,
     vehicle_in: VehicleUpdate,
@@ -338,6 +342,7 @@ async def update_vehicle(
         )
 
 @router.delete("/{vehicle_id}")
+@invalidate_cache("vehicles:*")  # Clear all vehicle caches when deleting
 async def delete_vehicle(
     vehicle_id: str,
     current_user = Depends(check_admin_role)

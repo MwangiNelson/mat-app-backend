@@ -7,6 +7,7 @@ import logging
 from app.models import get_db
 from app.models.models import Driver, Trip, Deficit, DailySummary
 from app.core.security import get_current_user, check_admin_role
+from app.core.cache import cached, invalidate_cache
 from app.schemas.driver import (
     DriverCreate,
     DriverUpdate,
@@ -46,6 +47,7 @@ def create_driver_error(status_code: int, message: str, error_type: str, details
     )
 
 @router.get("/", response_model=List[DriverResponse])
+@cached(ttl=300, key_prefix="drivers")  # Cache for 5 minutes
 async def get_drivers(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -76,6 +78,7 @@ async def get_drivers(
         )
 
 @router.post("/", response_model=DriverResponse)
+@invalidate_cache("drivers:*")  # Clear all driver caches when creating
 async def create_driver(
     driver_in: DriverCreate,
     current_user = Depends(check_admin_role),
@@ -158,6 +161,7 @@ async def get_driver(
         )
 
 @router.put("/{driver_id}", response_model=DriverResponse)
+@invalidate_cache("drivers:*")  # Clear all driver caches when updating
 async def update_driver(
     driver_id: str,
     driver_in: DriverUpdate,
@@ -230,6 +234,7 @@ async def update_driver(
         )
 
 @router.delete("/{driver_id}")
+@invalidate_cache("drivers:*")  # Clear all driver caches when deleting
 async def delete_driver(
     driver_id: str,
     current_user = Depends(check_admin_role),
@@ -302,6 +307,7 @@ async def delete_driver(
         )
 
 @router.get("/{driver_id}/performance", response_model=dict)
+@cached(ttl=300, key_prefix="drivers")  # Cache for 5 minutes - individual driver performance
 async def get_driver_performance(
     driver_id: str,
     days: int = 30,
@@ -369,6 +375,7 @@ async def get_driver_performance(
         )
 
 @router.put("/{driver_id}/rate", response_model=DriverResponse)
+@invalidate_cache("drivers:*")  # Clear all driver caches when rating
 async def rate_driver(
     driver_id: str,
     rating: DriverRating,
