@@ -1,7 +1,8 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, validator
 from typing import Optional, Union
 from datetime import datetime, date
 from enum import Enum
+from uuid import UUID
 
 class VehicleStatus(str, Enum):
     ACTIVE = "active"
@@ -93,6 +94,13 @@ class VehicleInDB(VehicleBase):
     created_at: datetime
     updated_at: datetime
 
+    @field_validator('id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v):
+        if isinstance(v, UUID):
+            return str(v)
+        return v
+
     class Config:
         from_attributes = True
 
@@ -100,6 +108,13 @@ class VehicleResponse(VehicleBase):
     id: str
     created_at: datetime
     updated_at: datetime
+
+    @field_validator('id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v):
+        if isinstance(v, UUID):
+            return str(v)
+        return v
 
     class Config:
         from_attributes = True

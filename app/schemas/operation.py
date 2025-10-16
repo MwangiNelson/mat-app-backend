@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime, date
+from uuid import UUID
 
 class OperationBase(BaseModel):
     date: date
@@ -28,6 +29,13 @@ class OperationInDB(OperationBase):
     created_at: datetime
     updated_at: datetime
 
+    @field_validator('id', 'created_by', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v):
+        if isinstance(v, UUID):
+            return str(v)
+        return v
+
     class Config:
         from_attributes = True
 
@@ -36,11 +44,18 @@ class OperationResponse(OperationBase):
     created_by: str
     created_at: datetime
     updated_at: datetime
-    
+
+    @field_validator('id', 'created_by', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v):
+        if isinstance(v, UUID):
+            return str(v)
+        return v
+
     # Include additional fields for easy display
     vehicle_reg_no: Optional[str] = None
     driver_name: Optional[str] = None
-    
+
     class Config:
         from_attributes = True
 

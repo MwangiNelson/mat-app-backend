@@ -1,7 +1,8 @@
 """
 Health check endpoints for monitoring system status.
 """
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException
+from starlette import status
 from typing import Dict, Any
 import time
 from app.core.redis import test_redis_connection
