@@ -20,6 +20,7 @@ from app.models.models import Trip, Driver, Vehicle, User
 from app.core.security import get_current_active_user
 from app.schemas.dashboard import ReportFormat, ReportResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import desc
 import logging
 
 # Set up logger
@@ -107,7 +108,7 @@ def render_template_to_pdf(template_name, context_data):
             detail=error_msg
         )
 
-def fetch_trip_data(start_date, end_date, vehicle_ids=None, driver_ids=None):
+def fetch_trip_data(db: Session, start_date, end_date, vehicle_ids=None, driver_ids=None):
     """Fetch trip data with optional filters for multiple vehicles and drivers"""
     try:
         logger.info(f"Fetching trip data from {start_date} to {end_date}")
@@ -118,41 +119,79 @@ def fetch_trip_data(start_date, end_date, vehicle_ids=None, driver_ids=None):
         # Create end_datetime with time at 23:59:59
         end_datetime = datetime.combine(end_date, datetime.max.time())
         
-        query = supabase.table("trips").select("*").gte("collection_time", start_datetime.isoformat()).lte("collection_time", end_datetime.isoformat())
+        # Build query
+        query = db.query(Trip).filter(
+            Trip.collection_time >= start_datetime,
+            Trip.collection_time <= end_datetime
+        )
         
         if vehicle_ids:
             if isinstance(vehicle_ids, list):
-                query = query.in_("vehicle_id", vehicle_ids)
+                query = query.filter(Trip.vehicle_id.in_(vehicle_ids))
             else:
-                query = query.eq("vehicle_id", vehicle_ids)
+                query = query.filter(Trip.vehicle_id == vehicle_ids)
             
         if driver_ids:
             if isinstance(driver_ids, list):
-                query = query.in_("driver_id", driver_ids)
+                query = query.filter(Trip.driver_id.in_(driver_ids))
             else:
-                query = query.eq("driver_id", driver_ids)
+                query = query.filter(Trip.driver_id == driver_ids)
         
-        response = query.order("collection_time", desc=True).execute()
-        logger.info(f"Found {len(response.data)} trips")
-        return response.data
+        # Execute query and order by collection_time descending
+        trips = query.order_by(desc(Trip.collection_time)).all()
+        
+        logger.info(f"Found {len(trips)} trips")
+        
+        # Convert SQLAlchemy objects to dictionaries
+        trips_data = []
+        for trip in trips:
+            trip_dict = {
+                "id": str(trip.id),
+                "driver_id": str(trip.driver_id),
+                "vehicle_id": str(trip.vehicle_id),
+                "collection_time": trip.collection_time.isoformat() if trip.collection_time else None,
+                "route": trip.route,
+                "notes": trip.notes,
+                "collected_amount": float(trip.collected_amount) if trip.collected_amount else 0.0,
+                "repair_expense": float(trip.repair_expense) if trip.repair_expense else 0.0,
+                "status": trip.status,
+                "created_by": str(trip.created_by),
+                "created_at": trip.created_at.isoformat() if trip.created_at else None,
+                "updated_at": trip.updated_at.isoformat() if trip.updated_at else None,
+            }
+            trips_data.append(trip_dict)
+        
+        return trips_data
     except Exception as e:
         logger.error(f"Error fetching trip data: {str(e)}")
         logger.error(traceback.format_exc())
         raise
 
-def enrich_trip_data(trips):
+def enrich_trip_data(db: Session, trips):
     """Enrich trip data with driver, vehicle and date/time info"""
     try:
         logger.info(f"Enriching {len(trips)} trips with additional data")
         enriched_trips = []
         
+        # Cache for drivers and vehicles to reduce queries
+        drivers_cache = {}
+        vehicles_cache = {}
+        
         for trip in trips:
             try:
-                # Get driver info
-                driver_response = supabase.table("drivers").select("name").eq("id", trip["driver_id"]).execute()
+                # Get driver info (with caching)
+                driver_id = trip["driver_id"]
+                if driver_id not in drivers_cache:
+                    driver = db.query(Driver).filter(Driver.id == driver_id).first()
+                    drivers_cache[driver_id] = driver.name if driver else "Unknown"
+                driver_name = drivers_cache[driver_id]
                 
-                # Get vehicle info
-                vehicle_response = supabase.table("vehicles").select("reg_no").eq("id", trip["vehicle_id"]).execute()
+                # Get vehicle info (with caching)
+                vehicle_id = trip["vehicle_id"]
+                if vehicle_id not in vehicles_cache:
+                    vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
+                    vehicles_cache[vehicle_id] = vehicle.reg_no if vehicle else "Unknown"
+                vehicle_registration = vehicles_cache[vehicle_id]
                 
                 # Calculate efficiency
                 efficiency = 0
@@ -209,8 +248,8 @@ def enrich_trip_data(trips):
                 # Create enriched trip object
                 enriched_trip = {
                     **trip,
-                    "driver_name": driver_response.data[0]["name"] if driver_response.data else "Unknown",
-                    "vehicle_registration": vehicle_response.data[0]["reg_no"] if vehicle_response.data else "Unknown",
+                    "driver_name": driver_name,
+                    "vehicle_registration": vehicle_registration,
                     "efficiency": efficiency,
                     "collection_date": collection_date,
                     "collection_time_only": collection_time_only,
@@ -279,7 +318,8 @@ async def generate_driver_report(
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     format: ReportFormat = Query(ReportFormat.PDF, description="Report format (pdf or html)"),
-    current_user = Depends(get_current_active_user)
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
 ) -> Any:
     """
     Generate a detailed performance report for a specific driver.
@@ -327,24 +367,32 @@ async def generate_driver_report(
         
         # Check if driver exists
         logger.info(f"Checking if driver with ID {driver_id} exists")
-        driver_response = supabase.table("drivers").select("*").eq("id", driver_id).execute()
+        driver = db.query(Driver).filter(Driver.id == driver_id).first()
         
-        if not driver_response.data:
+        if not driver:
             logger.error(f"Driver with ID {driver_id} not found")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Driver not found"
             )
         
-        driver = driver_response.data[0]
-        logger.info(f"Found driver: {driver.get('name', 'Unknown')}")
+        logger.info(f"Found driver: {driver.name}")
+        
+        # Convert driver to dict for report context
+        driver_dict = {
+            "id": str(driver.id),
+            "name": driver.name,
+            "phone": driver.phone,
+            "status": driver.status,
+            "created_at": driver.created_at.isoformat() if driver.created_at else None,
+        }
         
         # Get and enrich trip data
         logger.info(f"Fetching trip data for driver from {parsed_start_date} to {parsed_end_date}")
-        trips = fetch_trip_data(parsed_start_date, parsed_end_date, driver_ids=driver_id)
+        trips = fetch_trip_data(db, parsed_start_date, parsed_end_date, driver_ids=driver_id)
         logger.info(f"Found {len(trips)} trips for driver")
         
-        enriched_trips = enrich_trip_data(trips)
+        enriched_trips = enrich_trip_data(db, trips)
         
         # Process driver performance metrics
         logger.info("Processing driver performance metrics")
@@ -389,7 +437,7 @@ async def generate_driver_report(
         
         # Prepare driver performance data
         driver_performance = {
-            **driver,
+            **driver_dict,
             "total_collections": total_collections,
             "total_expenses": total_expenses,
             "net_profit": net_profit,
@@ -422,7 +470,7 @@ async def generate_driver_report(
             html_content = template.render(**context)
             
             # Return HTML response
-            filename = f"{driver['name'].replace(' ', '_')}_{parsed_start_date.strftime('%Y%m%d')}_report.html"
+            filename = f"{driver_dict['name'].replace(' ', '_')}_{parsed_start_date.strftime('%Y%m%d')}_report.html"
             logger.info(f"HTML report generated, filename: {filename}")
             
             return StreamingResponse(
@@ -434,7 +482,7 @@ async def generate_driver_report(
             # Render PDF
             logger.info("Rendering PDF report")
             pdf_content = render_template_to_pdf("driver_report.html", context)
-            filename = f"{driver['name'].replace(' ', '_')}_{parsed_start_date.strftime('%Y%m%d')}_report.pdf"
+            filename = f"{driver_dict['name'].replace(' ', '_')}_{parsed_start_date.strftime('%Y%m%d')}_report.pdf"
             logger.info(f"PDF report generated, filename: {filename}")
             
             return StreamingResponse(
@@ -458,7 +506,8 @@ async def generate_vehicle_report(
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     format: ReportFormat = Query(ReportFormat.PDF, description="Report format (pdf or html)"),
-    current_user = Depends(get_current_active_user)
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
 ) -> Any:
     """
     Generate a detailed performance report for a specific vehicle.
@@ -498,19 +547,26 @@ async def generate_vehicle_report(
                 )
         
         # Check if vehicle exists
-        vehicle_response = supabase.table("vehicles").select("*").eq("id", vehicle_id).execute()
+        vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
         
-        if not vehicle_response.data:
+        if not vehicle:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Vehicle not found"
             )
         
-        vehicle_base = vehicle_response.data[0]
+        # Convert vehicle to dict for report context
+        vehicle_base = {
+            "id": str(vehicle.id),
+            "reg_no": vehicle.reg_no,
+            "model": vehicle.model,
+            "status": vehicle.status,
+            "created_at": vehicle.created_at.isoformat() if vehicle.created_at else None,
+        }
         
         # Get and enrich trip data
-        trips = fetch_trip_data(parsed_start_date, parsed_end_date, vehicle_ids=vehicle_id)
-        enriched_trips = enrich_trip_data(trips)
+        trips = fetch_trip_data(db, parsed_start_date, parsed_end_date, vehicle_ids=vehicle_id)
+        enriched_trips = enrich_trip_data(db, trips)
         
         # Process vehicle performance metrics
         total_collections = 0
@@ -647,7 +703,8 @@ async def generate_combined_report(
     vehicle_ids: Optional[str] = Query(None, description="Comma-separated list of vehicle IDs"),
     driver_ids: Optional[str] = Query(None, description="Comma-separated list of driver IDs"),
     format: ReportFormat = Query(ReportFormat.PDF, description="Report format (pdf or html)"),
-    current_user = Depends(get_current_active_user)
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
 ) -> Any:
     """
     Generate a combined performance report for multiple vehicles and/or drivers.
@@ -693,19 +750,31 @@ async def generate_combined_report(
         # Fetch vehicle and driver details
         vehicles_data = {}
         if vehicle_id_list:
-            vehicles_response = supabase.table("vehicles").select("*").in_("id", vehicle_id_list).execute()
-            for vehicle in vehicles_response.data:
-                vehicles_data[vehicle["id"]] = vehicle
+            vehicles = db.query(Vehicle).filter(Vehicle.id.in_(vehicle_id_list)).all()
+            for vehicle in vehicles:
+                vehicles_data[str(vehicle.id)] = {
+                    "id": str(vehicle.id),
+                    "reg_no": vehicle.reg_no,
+                    "model": vehicle.model,
+                    "status": vehicle.status,
+                    "created_at": vehicle.created_at.isoformat() if vehicle.created_at else None,
+                }
         
         drivers_data = {}
         if driver_id_list:
-            drivers_response = supabase.table("drivers").select("*").in_("id", driver_id_list).execute()
-            for driver in drivers_response.data:
-                drivers_data[driver["id"]] = driver
+            drivers = db.query(Driver).filter(Driver.id.in_(driver_id_list)).all()
+            for driver in drivers:
+                drivers_data[str(driver.id)] = {
+                    "id": str(driver.id),
+                    "name": driver.name,
+                    "phone": driver.phone,
+                    "status": driver.status,
+                    "created_at": driver.created_at.isoformat() if driver.created_at else None,
+                }
         
         # Get and enrich trip data
-        trips = fetch_trip_data(parsed_start_date, parsed_end_date, vehicle_id_list, driver_id_list)
-        enriched_trips = enrich_trip_data(trips)
+        trips = fetch_trip_data(db, parsed_start_date, parsed_end_date, vehicle_id_list, driver_id_list)
+        enriched_trips = enrich_trip_data(db, trips)
         
         # Process metrics
         total_collections = 0

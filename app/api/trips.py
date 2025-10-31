@@ -327,151 +327,150 @@ async def get_trip_detail(
 async def update_trip(
     trip_id: str,
     trip_update: TripUpdate,
-    current_user = Depends(get_current_active_user)
+    current_user = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
 ) -> Any:
     """
     Update a trip.
     """
     try:
         # Check if trip exists
-        check_response = supabase.table("trips").select("*").eq("id", trip_id).execute()
+        trip = db.query(Trip).filter(Trip.id == trip_id).first()
         
-        if not check_response.data:
-            raise HTTPException(
+        if not trip:
+            raise create_trip_error(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Trip not found"
+                message="Trip not found. Please check the trip ID and try again.",
+                error_type="trip_not_found",
+                details={"trip_id": trip_id}
             )
         
         # Filter out None values
-        update_data = {k: v for k, v in trip_update.dict().items() if v is not None}
+        update_data = {k: v for k, v in trip_update.dict(exclude_unset=True).items() if v is not None}
         
-        if not update_data:
-            # Even if no updates, we need to enrich the response with driver and vehicle info
-            trip_data = check_response.data[0]
-            driver = supabase.table("drivers").select("name").eq("id", trip_data["driver_id"]).execute()
-            vehicle = supabase.table("vehicles").select("reg_no").eq("id", trip_data["vehicle_id"]).execute()
+        if update_data:
+            # Validate vehicle and driver if being updated
+            if "vehicle_id" in update_data:
+                vehicle = db.query(Vehicle).filter(Vehicle.id == update_data["vehicle_id"]).first()
+                if not vehicle:
+                    raise create_trip_error(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        message="Vehicle not found. Please check the vehicle ID and try again.",
+                        error_type="vehicle_not_found",
+                        details={"vehicle_id": str(update_data["vehicle_id"])}
+                    )
+                if vehicle.status != "active":
+                    raise create_trip_error(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        message="Cannot assign trip to inactive vehicle. Please select an active vehicle.",
+                        error_type="vehicle_inactive",
+                        details={"vehicle_id": str(update_data["vehicle_id"]), "vehicle_status": vehicle.status}
+                    )
             
-            enriched_trip = {
-                **trip_data,
-                "driver_name": driver.data[0]["name"] if driver.data else None,
-                "vehicle_registration": vehicle.data[0]["reg_no"] if vehicle.data else None,
-                "route": None,
-                "origin": None,
-                "destination": None,
-                "fare_amount": None
-            }
+            if "driver_id" in update_data:
+                driver = db.query(Driver).filter(Driver.id == update_data["driver_id"]).first()
+                if not driver:
+                    raise create_trip_error(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        message="Driver not found. Please check the driver ID and try again.",
+                        error_type="driver_not_found",
+                        details={"driver_id": str(update_data["driver_id"])}
+                    )
+                if driver.status != "active":
+                    raise create_trip_error(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        message="Cannot assign trip to inactive driver. Please select an active driver.",
+                        error_type="driver_inactive",
+                        details={"driver_id": str(update_data["driver_id"]), "driver_status": driver.status}
+                    )
             
-            # Split collection_time into date and time fields
-            if "collection_time" in trip_data and trip_data["collection_time"]:
-                dt_obj = datetime.fromisoformat(trip_data["collection_time"].replace('Z', '+00:00'))
-                enriched_trip["collection_date"] = dt_obj.strftime("%Y-%m-%d")
-                enriched_trip["collection_time_only"] = dt_obj.strftime("%H:%M:%S")
+            # Update trip fields
+            for key, value in update_data.items():
+                setattr(trip, key, value)
             
-            return enriched_trip
+            db.commit()
+            db.refresh(trip)
         
-        # Serialize datetime objects for database
-        update_data = serialize_for_db(update_data)
+        # Get driver and vehicle info for enriched response
+        driver = db.query(Driver).filter(Driver.id == trip.driver_id).first()
+        vehicle = db.query(Vehicle).filter(Vehicle.id == trip.vehicle_id).first()
         
-        # Update trip
-        response = supabase.table("trips").update(update_data).eq("id", trip_id).execute()
-        
-        if not response.data:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to update trip"
-            )
-        
-        # If trip is completed, update daily summary
-        if "status" in update_data and update_data["status"] == "completed":
-            trip_data = response.data[0]
-            trip_date = datetime.fromisoformat(trip_data["collection_time"].replace('Z', '+00:00')).date()
-            
-            # Calculate total expenses
-            total_expenses =  trip_data.get("repair_expense", 0)
-            net_profit = trip_data.get("collected_amount", 0) - total_expenses
-            
-            # Check if summary exists for this vehicle and date
-            summary_check = supabase.table("daily_summaries").select("*").eq("vehicle_id", trip_data["vehicle_id"]).eq("date", trip_date.isoformat()).execute()
-            
-            if summary_check.data:
-                # Update existing summary
-                summary = summary_check.data[0]
-                summary_update = {
-                    "trip_count": summary["trip_count"] + 1,
-                    "total_expected_amount": summary["total_expected_amount"] + trip_data["expected_amount"],
-                    "total_collected_amount": summary["total_collected_amount"] + (trip_data.get("collected_amount", 0) or 0),
-                    "total_expenses": summary["total_expenses"] + total_expenses,
-                    "net_profit": summary["net_profit"] + net_profit
-                }
-                
-                supabase.table("daily_summaries").update(summary_update).eq("id", summary["id"]).execute()
-            else:
-                # Create new summary
-                summary_data = {
-                    "vehicle_id": trip_data["vehicle_id"],
-                    "driver_id": trip_data["driver_id"],
-                    "date": trip_date.isoformat(),
-                    "trip_count": 1,
-                    "total_expected_amount": trip_data["expected_amount"],
-                    "total_collected_amount": trip_data.get("collected_amount", 0) or 0,
-                    "total_expenses": total_expenses,
-                    "net_profit": net_profit
-                }
-                
-                supabase.table("daily_summaries").insert(summary_data).execute()
-        
-        # Enrich response with driver and vehicle information
-        trip_data = response.data[0]
-        driver = supabase.table("drivers").select("name").eq("id", trip_data["driver_id"]).execute()
-        vehicle = supabase.table("vehicles").select("reg_no").eq("id", trip_data["vehicle_id"]).execute()
-        
+        # Build detailed trip response
         enriched_trip = {
-            **trip_data,
-            "driver_name": driver.data[0]["name"] if driver.data else None,
-            "vehicle_registration": vehicle.data[0]["reg_no"] if vehicle.data else None,
-            "route": None,
-            "origin": None,
-            "destination": None,
-            "fare_amount": None
+            "id": str(trip.id),
+            "driver_id": str(trip.driver_id),
+            "vehicle_id": str(trip.vehicle_id),
+            "driver_name": driver.name if driver else "Unknown",
+            "vehicle_registration": vehicle.reg_no if vehicle else "Unknown",
+            "collection_time": trip.collection_time.isoformat() if trip.collection_time else None,
+            "route": trip.route,
+            "route_text": trip.route,  # Using route as route_text
+            "notes": trip.notes,
+            "collected_amount": float(trip.collected_amount),
+            "repair_expense": float(trip.repair_expense) if trip.repair_expense else 0.0,
+            "created_by": str(trip.created_by),
+            "status": trip.status,
+            "created_at": trip.created_at.isoformat() if trip.created_at else None,
+            "updated_at": trip.updated_at.isoformat() if trip.updated_at else None,
+            # Additional fields for compatibility
+            "origin": None,  # Not available in current schema
+            "destination": None,  # Not available in current schema
+            "fare_amount": None  # Not available in current schema
         }
         
-        # Split collection_time into date and time fields
-        if "collection_time" in trip_data and trip_data["collection_time"]:
-            dt_obj = datetime.fromisoformat(trip_data["collection_time"].replace('Z', '+00:00'))
-            enriched_trip["collection_date"] = dt_obj.strftime("%Y-%m-%d")
-            enriched_trip["collection_time_only"] = dt_obj.strftime("%H:%M:%S")
+        # Split collection_time into date and time fields if available
+        if trip.collection_time:
+            enriched_trip["collection_date"] = trip.collection_time.strftime("%Y-%m-%d")
+            enriched_trip["collection_time_only"] = trip.collection_time.strftime("%H:%M:%S")
         
         return enriched_trip
-    except HTTPException:
-        raise
+        
+    except HTTPException as he:
+        raise he
     except Exception as e:
-        raise HTTPException(
+        db.rollback()
+        logger.error(f"Failed to update trip {trip_id}: {str(e)}")
+        raise create_trip_error(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error updating trip: {str(e)}"
+            message="Failed to update trip. Please try again later.",
+            error_type="trip_update_failed",
+            details={"trip_id": trip_id, "error": str(e)}
         )
 
 @router.delete("/{trip_id}", status_code=status.HTTP_204_NO_CONTENT)
 @invalidate_cache("trips:*", "dashboard:*", "vehicles:*", "drivers:*")  # Clear multiple caches
-async def delete_trip(trip_id: str, current_user = Depends(check_admin_role)) -> None:
+async def delete_trip(
+    trip_id: str, 
+    current_user = Depends(check_admin_role),
+    db: Session = Depends(get_db)
+) -> None:
     """
     Delete a trip (admin only).
     """
     try:
         # Check if trip exists
-        check_response = supabase.table("trips").select("*").eq("id", trip_id).execute()
+        trip = db.query(Trip).filter(Trip.id == trip_id).first()
         
-        if not check_response.data:
-            raise HTTPException(
+        if not trip:
+            raise create_trip_error(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Trip not found"
+                message="Trip not found. Please check the trip ID and try again.",
+                error_type="trip_not_found",
+                details={"trip_id": trip_id}
             )
         
         # Delete trip
-        supabase.table("trips").delete().eq("id", trip_id).execute()
-    except HTTPException:
-        raise
+        db.delete(trip)
+        db.commit()
+        
+    except HTTPException as he:
+        raise he
     except Exception as e:
-        raise HTTPException(
+        db.rollback()
+        logger.error(f"Failed to delete trip {trip_id}: {str(e)}")
+        raise create_trip_error(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error deleting trip: {str(e)}"
+            message="Failed to delete trip. Please try again later.",
+            error_type="trip_deletion_failed",
+            details={"trip_id": trip_id, "error": str(e)}
         ) 
