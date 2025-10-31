@@ -66,7 +66,8 @@ def convert_iso_dates_to_client_format(vehicle: Dict) -> Dict:
 @router.get("/expiring", response_model=List[VehicleResponse])
 async def get_expiring_vehicles(
     days: int = Query(30, ge=1, le=90),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ) -> Any:
     """
     Get vehicles with documents expiring within the next X days.
@@ -76,16 +77,45 @@ async def get_expiring_vehicles(
         expiry_date = today + timedelta(days=days)
         
         # Get vehicles where either insurance or TLB is expiring
-        query = supabase.table("vehicles").select("*").or_(
-            f"insurance_expiry.lte.{expiry_date.isoformat()},tlb_expiry.lte.{expiry_date.isoformat()}"
-        ).gte("insurance_expiry", today.isoformat()).gte("tlb_expiry", today.isoformat()).execute()
+        from sqlalchemy import or_, and_
+        vehicles = db.query(Vehicle).filter(
+            or_(
+                and_(
+                    Vehicle.insurance_expiry.isnot(None),
+                    Vehicle.insurance_expiry >= today,
+                    Vehicle.insurance_expiry <= expiry_date
+                ),
+                and_(
+                    Vehicle.tlb_expiry.isnot(None),
+                    Vehicle.tlb_expiry >= today,
+                    Vehicle.tlb_expiry <= expiry_date
+                )
+            )
+        ).all()
         
-        # Convert date formats for each vehicle
-        for i in range(len(query.data)):
-            query.data[i] = convert_iso_dates_to_client_format(query.data[i])
+        # Convert to response format
+        result = []
+        for vehicle in vehicles:
+            vehicle_dict = {
+                "id": str(vehicle.id),
+                "reg_no": vehicle.reg_no,
+                "model": vehicle.model,
+                "owner": vehicle.owner,
+                "status": vehicle.status,
+                "passenger_capacity": vehicle.passenger_capacity,
+                "insurance_expiry": vehicle.insurance_expiry.isoformat() if vehicle.insurance_expiry else None,
+                "tlb_expiry": vehicle.tlb_expiry.isoformat() if vehicle.tlb_expiry else None,
+                "inspection_expiry": vehicle.inspection_expiry.isoformat() if vehicle.inspection_expiry else None,
+                "speed_governor_expiry": vehicle.speed_governor_expiry.isoformat() if vehicle.speed_governor_expiry else None,
+                "created_at": vehicle.created_at.isoformat() if vehicle.created_at else None,
+                "updated_at": vehicle.updated_at.isoformat() if vehicle.updated_at else None,
+            }
+            vehicle_dict = convert_iso_dates_to_client_format(vehicle_dict)
+            result.append(vehicle_dict)
         
-        return query.data
+        return result
     except Exception as e:
+        logger.error(f"Failed to retrieve expiring vehicles: {str(e)}")
         raise create_vehicle_error(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             message=f"Error retrieving expiring vehicles: {str(e)}",
@@ -244,15 +274,16 @@ async def create_vehicle(
 @router.get("/{vehicle_id}", response_model=VehicleResponse)
 async def get_vehicle(
     vehicle_id: str,
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ) -> Any:
     """
     Get vehicle by ID.
     """
     try:
-        response = supabase.table("vehicles").select("*").eq("id", vehicle_id).execute()
+        vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
         
-        if not response.data:
+        if not vehicle:
             raise create_vehicle_error(
                 status_code=status.HTTP_404_NOT_FOUND,
                 message="Vehicle not found",
@@ -260,13 +291,30 @@ async def get_vehicle(
                 details={"vehicle_id": vehicle_id}
             )
         
-        # Convert date formats
-        vehicle = convert_iso_dates_to_client_format(response.data[0])
+        # Convert to response format
+        vehicle_dict = {
+            "id": str(vehicle.id),
+            "reg_no": vehicle.reg_no,
+            "model": vehicle.model,
+            "owner": vehicle.owner,
+            "status": vehicle.status,
+            "passenger_capacity": vehicle.passenger_capacity,
+            "insurance_expiry": vehicle.insurance_expiry.isoformat() if vehicle.insurance_expiry else None,
+            "tlb_expiry": vehicle.tlb_expiry.isoformat() if vehicle.tlb_expiry else None,
+            "inspection_expiry": vehicle.inspection_expiry.isoformat() if vehicle.inspection_expiry else None,
+            "speed_governor_expiry": vehicle.speed_governor_expiry.isoformat() if vehicle.speed_governor_expiry else None,
+            "created_at": vehicle.created_at.isoformat() if vehicle.created_at else None,
+            "updated_at": vehicle.updated_at.isoformat() if vehicle.updated_at else None,
+        }
         
-        return vehicle
+        # Convert date formats
+        vehicle_dict = convert_iso_dates_to_client_format(vehicle_dict)
+        
+        return vehicle_dict
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Failed to retrieve vehicle {vehicle_id}: {str(e)}")
         raise create_vehicle_error(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             message=f"Error retrieving vehicle: {str(e)}",
@@ -279,16 +327,17 @@ async def get_vehicle(
 async def update_vehicle(
     vehicle_id: str,
     vehicle_in: VehicleUpdate,
-    current_user = Depends(check_admin_role)
+    current_user = Depends(check_admin_role),
+    db: Session = Depends(get_db)
 ) -> Any:
     """
     Update a vehicle.
     """
     try:
         # Check if vehicle exists
-        existing = supabase.table("vehicles").select("*").eq("id", vehicle_id).execute()
+        vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
         
-        if not existing.data:
+        if not vehicle:
             raise create_vehicle_error(
                 status_code=status.HTTP_404_NOT_FOUND,
                 message="Vehicle not found",
@@ -297,37 +346,55 @@ async def update_vehicle(
             )
         
         # Filter out None values and handle field aliases
-        update_data = {}
         data_dict = vehicle_in.dict(exclude_none=True)
         
-        # Handle specific field mappings and convert dates to strings
-        for key, value in data_dict.items():
-            # Map registration to reg_no
-            if key == "registration":
-                update_data["reg_no"] = value
-            # Convert date objects to ISO format strings
-            elif key in ['insurance_expiry', 'tlb_expiry', 'speed_governor_expiry', 'inspection_expiry'] and isinstance(value, date):
-                update_data[key] = value.isoformat()
-            else:
-                update_data[key] = value
-        
-        if not update_data:
+        if not data_dict:
             raise create_vehicle_error(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 message="No fields to update",
                 error_type="missing_data"
             )
         
-        response = supabase.table("vehicles").update(update_data).eq("id", vehicle_id).execute()
+        # Handle specific field mappings and update vehicle
+        for key, value in data_dict.items():
+            # Map registration to reg_no
+            if key == "registration":
+                setattr(vehicle, "reg_no", value)
+            # Parse date strings if needed
+            elif key in ['insurance_expiry', 'tlb_expiry', 'speed_governor_expiry', 'inspection_expiry']:
+                if isinstance(value, str):
+                    value = parse_date_string(value)
+                setattr(vehicle, key, value)
+            else:
+                setattr(vehicle, key, value)
         
-        # Add default passenger_capacity if missing
-        if "passenger_capacity" not in response.data[0] or response.data[0]["passenger_capacity"] is None:
-            response.data[0]["passenger_capacity"] = 0
+        db.commit()
+        db.refresh(vehicle)
         
-        return response.data[0]
+        # Convert to response format
+        vehicle_dict = {
+            "id": str(vehicle.id),
+            "reg_no": vehicle.reg_no,
+            "model": vehicle.model,
+            "owner": vehicle.owner,
+            "status": vehicle.status,
+            "passenger_capacity": vehicle.passenger_capacity or 0,
+            "insurance_expiry": vehicle.insurance_expiry.isoformat() if vehicle.insurance_expiry else None,
+            "tlb_expiry": vehicle.tlb_expiry.isoformat() if vehicle.tlb_expiry else None,
+            "inspection_expiry": vehicle.inspection_expiry.isoformat() if vehicle.inspection_expiry else None,
+            "speed_governor_expiry": vehicle.speed_governor_expiry.isoformat() if vehicle.speed_governor_expiry else None,
+            "created_at": vehicle.created_at.isoformat() if vehicle.created_at else None,
+            "updated_at": vehicle.updated_at.isoformat() if vehicle.updated_at else None,
+        }
+        
+        # Convert date formats
+        vehicle_dict = convert_iso_dates_to_client_format(vehicle_dict)
+        
+        return vehicle_dict
     except HTTPException:
         raise
     except ValueError as e:
+        db.rollback()
         # Handle validation errors from Pydantic
         raise create_vehicle_error(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -335,6 +402,8 @@ async def update_vehicle(
             error_type="validation_error"
         )
     except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to update vehicle {vehicle_id}: {str(e)}")
         raise create_vehicle_error(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             message=f"Error updating vehicle: {str(e)}",
@@ -346,16 +415,17 @@ async def update_vehicle(
 @invalidate_cache("vehicles:*")  # Clear all vehicle caches when deleting
 async def delete_vehicle(
     vehicle_id: str,
-    current_user = Depends(check_admin_role)
+    current_user = Depends(check_admin_role),
+    db: Session = Depends(get_db)
 ) -> Any:
     """
     Delete a vehicle.
     """
     try:
         # Check if vehicle exists
-        existing = supabase.table("vehicles").select("*").eq("id", vehicle_id).execute()
+        vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
         
-        if not existing.data:
+        if not vehicle:
             raise create_vehicle_error(
                 status_code=status.HTTP_404_NOT_FOUND,
                 message="Vehicle not found",
@@ -363,20 +433,22 @@ async def delete_vehicle(
                 details={"vehicle_id": vehicle_id}
             )
         
-        # Check if vehicle has operations
-        operations = supabase.table("operations").select("id").eq("vehicle_id", vehicle_id).limit(1).execute()
+        # Check if vehicle has trips
+        has_trips = db.query(Trip).filter(Trip.vehicle_id == vehicle_id).first() is not None
         
-        if operations.data:
+        if has_trips:
             # Instead of deleting, mark as inactive
-            response = supabase.table("vehicles").update({"status": "inactive"}).eq("id", vehicle_id).execute()
+            vehicle.status = "inactive"
+            db.commit()
             return {
                 "status": "success",
-                "message": "Vehicle marked as inactive (has operations)",
+                "message": "Vehicle marked as inactive (has trips)",
                 "vehicle_id": vehicle_id
             }
         
-        # If no operations, delete the vehicle
-        response = supabase.table("vehicles").delete().eq("id", vehicle_id).execute()
+        # If no trips, delete the vehicle
+        db.delete(vehicle)
+        db.commit()
         
         return {
             "status": "success",
@@ -386,6 +458,8 @@ async def delete_vehicle(
     except HTTPException:
         raise
     except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to delete vehicle {vehicle_id}: {str(e)}")
         raise create_vehicle_error(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             message=f"Error deleting vehicle: {str(e)}",
