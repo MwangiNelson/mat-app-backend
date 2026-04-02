@@ -42,4 +42,4 @@ ENV PYTHONUNBUFFERED=1 \
 
 EXPOSE 4000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "4000", "--log-level", "info"]
+CMD uvicorn app.main:app --host $HOST --port $PORT --log-level info
